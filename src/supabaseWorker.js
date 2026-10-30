@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const Storage = require('./storage');
 const dispatchQueue = require('./queue');
 const whatsappManager = require('./whatsapp');
+const UmovmeParser = require('./parser');
 
 class SupabaseWorker {
   constructor() {
@@ -200,9 +201,15 @@ class SupabaseWorker {
         return;
       }
 
-      // Extrair Loja / PDV real do historyId caso venha genérico
-      let finalPdvName = (row.pdv_nome || '').trim();
+      // 1. Extrair os dados da atividade usando o UmovmeParser completo
       const rawRoot = row.raw_payload || {};
+      const activity = UmovmeParser.extractActivityData(rawRoot, {
+        urlClient: row.cliente,
+        urlNetwork: row.rede
+      });
+
+      // 2. Extrair Loja / PDV real do historyId caso venha genérico
+      let finalPdvName = (activity.pdvName && activity.pdvName !== 'Loja em Campo') ? activity.pdvName : (row.pdv_nome || '').trim();
       const historyStr = String(rawRoot.historyId || rawRoot.data?.historyId || '');
 
       if (!finalPdvName || finalPdvName === 'Loja em Campo' || finalPdvName === 'PDV Geral') {
@@ -215,52 +222,44 @@ class SupabaseWorker {
         }
       }
       if (!finalPdvName) finalPdvName = row.rede ? `Rede ${row.rede}` : 'Loja em Campo';
+      activity.pdvName = finalPdvName;
 
-      // Limpar nome do cliente se veio em formato de slug
-      let finalClientName = (row.cliente || '').trim();
+      // 3. Limpar nome do cliente se veio em formato de slug
+      let finalClientName = (row.cliente || activity.clientName || '').trim();
       const mappings = Storage.getMappings();
       const matchedRule = (mappings.rules || []).find(r => r.routeSlug === finalClientName || r.client?.toLowerCase() === finalClientName.toLowerCase());
       if (matchedRule && matchedRule.client) {
         finalClientName = matchedRule.client;
       }
+      activity.clientName = finalClientName;
 
-      // Desmembrar URLs e também verificar se há mais fotos no raw_payload
-      const cleanPhotos = [];
-      const extractUrls = (val) => {
-        if (!val) return;
-        if (typeof val === 'string' && val.includes('http')) {
-          const matches = val.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
-          for (const m of matches) {
-            if (m.includes('picviewer.umov.me') || m.includes('/Pic/') || m.includes('/files/') || m.match(/\.(jpe?g|png|webp|gif)/i)) {
-              if (!cleanPhotos.includes(m)) cleanPhotos.push(m);
-            }
-          }
-        } else if (Array.isArray(val)) {
-          val.forEach(extractUrls);
-        } else if (typeof val === 'object') {
-          Object.values(val).forEach(extractUrls);
+      // 4. Garantir campos do banco
+      if (row.atividade_id) activity.activityId = row.atividade_id;
+      if (row.promotor_nome && (!activity.promoterName || activity.promoterName === 'Promotor de Campo')) {
+        activity.promoterName = row.promotor_nome;
+      }
+      if (row.data_execucao && !activity.date) {
+        activity.date = row.data_execucao;
+      }
+
+      // 5. Garantir que se houver Foto do Mix em qualquer campo (clientId, observacoes, raw_payload), ela seja inserida no texto
+      if (!activity.fotoDoMix) {
+        const searchMix = JSON.stringify(rawRoot) + ' ' + (row.observacoes || '');
+        const mixMatch = searchMix.match(/Foto\s+do\s+Mix:\s*(https?:\/\/[^\s;"'<>]+)/i);
+        if (mixMatch && mixMatch[1]) {
+          activity.fotoDoMix = mixMatch[1].trim();
         }
-      };
+      }
 
-      // 1. Fotos cadastradas na coluna fotos
-      extractUrls(row.fotos);
-      // 2. Fotos presentes no raw_payload (activityId, clientId, etc.)
-      extractUrls(row.raw_payload);
+      // 6. Excluir a Foto do Mix da fila de fotos para não duplicar como arquivo de imagem (ela vai no texto)
+      if (activity.fotoDoMix && Array.isArray(activity.photoUrls)) {
+        activity.photoUrls = activity.photoUrls.filter(p => {
+          const u = typeof p === 'object' ? p.url : p;
+          return u !== activity.fotoDoMix;
+        });
+      }
 
-      const activity = {
-        activityId: row.atividade_id,
-        promoterName: row.promotor_nome || 'Promotor de Campo',
-        pdvName: finalPdvName,
-        pdvCode: row.pdv_codigo || 'S/C',
-        clientName: finalClientName,
-        networkName: row.rede,
-        activityName: row.tipo_atividade || 'Execução em PDV',
-        date: row.data_execucao || new Date().toLocaleString('pt-BR'),
-        notes: row.observacoes || '',
-        photoUrls: cleanPhotos
-      };
-
-      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName} | ${cleanPhotos.length} fotos) para o WhatsApp...`);
+      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName} | ${activity.photoUrls.length} fotos + Mix no texto: ${Boolean(activity.fotoDoMix)}) para o WhatsApp...`);
 
       // Enfileirar na fila anti-ban do WhatsApp
       dispatchQueue.enqueueActivity(activity, targetGroups);

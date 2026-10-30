@@ -69,31 +69,34 @@ Deno.serve(async (req) => {
 
     // Extrair fotos de todo o payload (suporte a múltiplas URLs separadas por ';' ou grudadas)
     const photoUrls: string[] = [];
-    const inspectString = (str: string) => {
+    let fotoDoMixLink = "";
+
+    const inspectString = (str: string, keyName?: string) => {
       if (typeof str !== "string" || !str.includes("http")) return;
       const matches = str.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
       for (const m of matches) {
         const clean = m.trim();
         if (clean.startsWith("http") && (clean.includes("picviewer.umov.me") || clean.includes("/Pic/") || clean.includes("/files/") || clean.match(/\.(jpe?g|png|webp|gif)/i))) {
-          if (!photoUrls.includes(clean)) photoUrls.push(clean);
+          // Se fizer parte da Foto do Mix, guarda separadamente para o texto e não coloca na lista de fotos enviadas como arquivo
+          if (str.toLowerCase().includes("foto do mix") || (keyName && keyName.toLowerCase().includes("mix"))) {
+            if (!fotoDoMixLink) fotoDoMixLink = clean;
+          } else {
+            if (!photoUrls.includes(clean)) photoUrls.push(clean);
+          }
         }
       }
     };
 
-    const inspectValue = (val: any) => {
+    const inspectValue = (val: any, keyName?: string) => {
       if (!val) return;
-      if (typeof val === "string") inspectString(val);
-      else if (Array.isArray(val)) val.forEach(inspectValue);
+      if (typeof val === "string") inspectString(val, keyName);
+      else if (Array.isArray(val)) val.forEach(v => inspectValue(v, keyName));
       else if (typeof val === "object") {
-        if (val.url) inspectString(val.url);
-        if (val.link) inspectString(val.link);
-        if (val.fileUrl) inspectString(val.fileUrl);
-        if (val.answer) inspectString(val.answer);
-        Object.values(val).forEach(inspectValue);
+        Object.entries(val).forEach(([k, v]) => inspectValue(v, k));
       }
     };
 
-    [root, rawPayload].forEach(inspectValue);
+    [root, rawPayload].forEach(v => inspectValue(v));
 
     // ID da atividade
     let activityId = "UMOV-" + Date.now();
@@ -122,8 +125,11 @@ Deno.serve(async (req) => {
 
     // Observações / Checklist (suporte a clientId: "NÃO;loja com produtos próximo ao vencimento")
     let notes = root.notes || root.observacoes || root.comment || "";
-    if (!notes && root.clientId && typeof root.clientId === "string" && !root.clientId.startsWith("http")) {
+    if (!notes && root.clientId && typeof root.clientId === "string") {
       notes = root.clientId.split(";").map((p: string) => p.trim()).filter(Boolean).join(" | ");
+    }
+    if (fotoDoMixLink && !notes.includes(fotoDoMixLink)) {
+      notes += (notes ? " | " : "") + `Foto do Mix: ${fotoDoMixLink}`;
     }
     if (!notes) notes = "Sem observações adicionais";
 

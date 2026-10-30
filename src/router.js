@@ -240,9 +240,14 @@ class MessageRouter {
     }
 
     // Foto do Mix exibida como link direto no texto inicial
-    if (activity.fotoDoMix) {
+    let mixLink = activity.fotoDoMix || '';
+    if (!mixLink && typeof activity.notes === 'string') {
+      const match = activity.notes.match(/Foto\s+do\s+Mix:\s*(https?:\/\/[^\s;"'<>]+)/i);
+      if (match) mixLink = match[1];
+    }
+    if (mixLink) {
       lines.push('');
-      lines.push(`Foto do Mix:${activity.fotoDoMix}`);
+      lines.push(`Foto do Mix: ${mixLink}`);
     }
 
     lines.push('');
