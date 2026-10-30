@@ -124,6 +124,7 @@ class WhatsAppManager {
           const errorMessage = lastDisconnect?.error?.message || '';
           const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403;
           const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+          const isReplaced = statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
 
           console.log(`[WhatsApp] Conexão encerrada. Código: ${statusCode || 'N/A'}${errorMessage ? ' (' + errorMessage + ')' : ''}`);
 
@@ -132,7 +133,12 @@ class WhatsAppManager {
           this.qrCodeDataUrl = null;
           this.userProfile = null;
 
-          if (isLoggedOut) {
+          if (isReplaced) {
+            console.log('[WhatsApp] ⚠️ CONEXÃO SUBSTITUÍDA (Código 440): Esta sessão foi aberta em outro local ou desconectada pelo aparelho. Limpando credenciais antigas para permitir novo escaneamento sem loop...');
+            this.wipeAuthFolder();
+            this.cancelScheduledReconnect();
+            this.scheduleReconnect(2500);
+          } else if (isLoggedOut) {
             console.log('[WhatsApp] ⚠️ Sessão desconectada ou inválida. Limpando credenciais antigas para novo QR Code...');
             this.wipeAuthFolder();
             this.scheduleReconnect(1500);
