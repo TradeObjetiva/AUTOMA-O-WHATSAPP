@@ -250,8 +250,10 @@ class MessageRouter {
       lines.push(`Foto do Mix: ${mixLink}`);
     }
 
-    lines.push('');
-    lines.push(`📸 Fotos: ${photoCount} foto(s) registradas (Antes / Depois) a seguir 👇`);
+    if (photoCount > 0) {
+      lines.push('');
+      lines.push('📸 Fotos de Antes/Depois a seguir 👇');
+    }
 
     return lines.join('\n');
   }
