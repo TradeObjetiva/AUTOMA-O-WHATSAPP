@@ -271,6 +271,7 @@ class MessageRouter {
     const lower = (tag || '').toLowerCase();
     if (lower.includes('antes')) return 'FOTO DO ANTES';
     if (lower.includes('extra')) return 'FOTO DO PONTO EXTRA';
+    if (lower.includes('backlight')) return 'FOTO DO BACKLIGHT';
     if (lower.includes('depois')) return 'FOTO DO DEPOIS';
     if (lower.includes('mix')) return 'FOTO DO MIX';
 

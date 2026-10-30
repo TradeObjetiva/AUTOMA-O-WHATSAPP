@@ -251,14 +251,14 @@ class UmovmeParser {
       });
     }
 
-    // Procurar por seções categorizadas: Antes, Depois, Ponto Extra, Mix
-    const tagRegex = /(Fotos?\s+do\s+antes|Fotos?\s+depois|Fotos?\s+do\s+depois|Fotos?\s+ponto\s+Extra|Foto\s+do\s+Mix|Fotos?\s+Extra)/gi;
+    // Procurar por seções categorizadas: Antes, Depois, Ponto Extra, Mix, Backlight
+    const tagRegex = /(?:Fotos?\s+do\s+|Fotos?\s+)?(antes|depois|ponto\s+extra|extra|mix|backlight)/gi;
 
     for (const text of allTexts) {
       const matches = [];
       let m;
       while ((m = tagRegex.exec(text)) !== null) {
-        matches.push({ tag: m[1], index: m.index });
+        matches.push({ tag: m[1], raw: m[0], index: m.index });
       }
 
       if (matches.length > 0) {
@@ -273,9 +273,10 @@ class UmovmeParser {
             .filter(u => u.startsWith('http') && !u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
 
           let categoryLabel = 'FOTO DO ANTES';
-          const lowerTag = current.tag.toLowerCase();
+          const lowerTag = (current.tag || '').toLowerCase();
           if (lowerTag.includes('depois')) categoryLabel = 'FOTO DO DEPOIS';
           else if (lowerTag.includes('extra')) categoryLabel = 'FOTO DO PONTO EXTRA';
+          else if (lowerTag.includes('backlight')) categoryLabel = 'FOTO DO BACKLIGHT';
           else if (lowerTag.includes('mix')) categoryLabel = 'FOTO DO MIX';
 
           urls.forEach(url => {
