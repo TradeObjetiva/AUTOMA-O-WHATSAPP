@@ -23,9 +23,47 @@ class WhatsAppManager {
     this.groupsCache = [];
     this.lastGroupsFetch = 0;
     this.logger = pino({ level: 'silent' });
+    this.isInitializing = false;
+    this.reconnectTimeout = null;
+  }
+
+  cancelScheduledReconnect() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+  }
+
+  scheduleReconnect(delayMs = 4000) {
+    this.cancelScheduledReconnect();
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      this.init();
+    }, delayMs);
+  }
+
+  async cleanupSocket() {
+    if (this.sock) {
+      try {
+        this.sock.ev.removeAllListeners();
+        this.sock.end(undefined);
+      } catch (_) {}
+      this.sock = null;
+    }
   }
 
   async init() {
+    if (this.isInitializing) {
+      console.log('[WhatsApp] Inicialização já em andamento, aguardando...');
+      return false;
+    }
+
+    this.isInitializing = true;
+    this.cancelScheduledReconnect();
+
+    // Limpar socket antigo se ainda existir em memória
+    await this.cleanupSocket();
+
     if (!fs.existsSync(AUTH_FOLDER)) {
       fs.mkdirSync(AUTH_FOLDER, { recursive: true });
     }
@@ -33,7 +71,16 @@ class WhatsAppManager {
     try {
       this.status = 'CONNECTING';
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-      const { version, isLatest } = await fetchLatestBaileysVersion();
+      
+      let version = [2, 3000, 1017531287];
+      let isLatest = true;
+      try {
+        const vInfo = await fetchLatestBaileysVersion();
+        version = vInfo.version;
+        isLatest = vInfo.isLatest;
+      } catch (verErr) {
+        console.warn('[WhatsApp] Aviso ao verificar versão Baileys, usando fallback:', verErr.message);
+      }
 
       console.log(`[WhatsApp] Inicializando Baileys v${version.join('.')} (Última: ${isLatest})`);
 
@@ -45,8 +92,14 @@ class WhatsAppManager {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, this.logger)
         },
-        generateHighQualityLinkPreview: true,
-        browser: ['Trade Marketing Hub', 'Chrome', '1.0.0']
+        generateHighQualityLinkPreview: false,
+        syncFullHistory: false, // CRÍTICO: Não carregar histórico pesado para evitar timeout e desconexões
+        markOnlineOnConnect: false,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000,
+        retryRequestDelayMs: 300,
+        browser: ['Trade Marketing Hub', 'Chrome', '122.0.0']
       });
 
       this.sock.ev.on('creds.update', saveCreds);
@@ -62,28 +115,33 @@ class WhatsAppManager {
           } catch (e) {
             console.error('[WhatsApp] Erro ao gerar QRCode DataURL:', e);
           }
-          console.log('\n[WhatsApp] NOVO QR CODE GERADO: Escaneie pelo WhatsApp do aparelho:');
+          console.log('\n[WhatsApp] 📲 NOVO QR CODE GERADO: Escaneie pelo WhatsApp do celular:');
           qrcodeTerminal.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
           const statusCode = lastDisconnect?.error?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          
-          console.log(`[WhatsApp] Conexão fechada. Motivo/Código: ${statusCode}. Reconectando: ${shouldReconnect}`);
+          const errorMessage = lastDisconnect?.error?.message || '';
+          const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403;
+          const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+
+          console.log(`[WhatsApp] Conexão encerrada. Código: ${statusCode || 'N/A'}${errorMessage ? ' (' + errorMessage + ')' : ''}`);
+
           this.status = 'DISCONNECTED';
           this.qrCodeRaw = null;
           this.qrCodeDataUrl = null;
           this.userProfile = null;
 
-          if (shouldReconnect) {
-            setTimeout(() => this.init(), 4000);
+          if (isLoggedOut) {
+            console.log('[WhatsApp] ⚠️ Sessão desconectada ou inválida. Limpando credenciais antigas para novo QR Code...');
+            this.wipeAuthFolder();
+            this.scheduleReconnect(1500);
+          } else if (isRestartRequired) {
+            console.log('[WhatsApp] 🔄 Reinício solicitado pelo WhatsApp (515). Reconectando rapidamente...');
+            this.scheduleReconnect(1500);
           } else {
-            console.log('[WhatsApp] Desconectado permanentemente (logout). Limpando credenciais...');
-            if (fs.existsSync(AUTH_FOLDER)) {
-              fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-            }
-            setTimeout(() => this.init(), 2000);
+            console.log('[WhatsApp] ⏳ Queda temporária de conexão. Reconectando em 5 segundos...');
+            this.scheduleReconnect(5000);
           }
         } else if (connection === 'open') {
           console.log('[WhatsApp] ✅ CONECTADO COM SUCESSO AO WHATSAPP!');
@@ -91,38 +149,72 @@ class WhatsAppManager {
           this.qrCodeRaw = null;
           this.qrCodeDataUrl = null;
           this.userProfile = this.sock.user;
-          // Buscar grupos disponíveis
-          setTimeout(() => this.getGroups(true), 2000);
+          this.cancelScheduledReconnect();
+
+          // Buscar grupos disponíveis após estabilizar
+          setTimeout(() => this.getGroups(true), 2500);
         }
       });
 
+      this.isInitializing = false;
       return true;
     } catch (error) {
       console.error('[WhatsApp] Erro na inicialização:', error);
       this.status = 'DISCONNECTED';
-      setTimeout(() => this.init(), 6000);
+      this.isInitializing = false;
+      this.scheduleReconnect(6000);
       return false;
     }
   }
 
-  async logout() {
+  wipeAuthFolder() {
     try {
-      if (this.sock) {
-        await this.sock.logout();
-      }
       if (fs.existsSync(AUTH_FOLDER)) {
         fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+        console.log('[WhatsApp] 🗑️ Pasta auth_info_baileys limpa com sucesso.');
       }
-      this.status = 'DISCONNECTED';
-      this.qrCodeRaw = null;
-      this.qrCodeDataUrl = null;
-      this.userProfile = null;
-      this.init();
-      return true;
     } catch (e) {
-      console.error('[WhatsApp] Erro ao deslogar:', e);
-      return false;
+      console.warn('[WhatsApp] Aviso ao remover pasta de credenciais:', e.message);
     }
+  }
+
+  async logout() {
+    return await this.resetSession();
+  }
+
+  /**
+   * Reseta a sessão por completo, fecha qualquer conexão aberta,
+   * apaga as credenciais salvas do primeiro WhatsApp e gera um QR Code limpo
+   * imediatamente para permitir conectar outro WhatsApp sem conflitos.
+   */
+  async resetSession() {
+    console.log('\n[WhatsApp] 🔄 Resetando sessão para conectar outro WhatsApp...');
+    this.cancelScheduledReconnect();
+
+    if (this.sock) {
+      try {
+        this.sock.ev.removeAllListeners();
+        await this.sock.logout().catch(() => {});
+        this.sock.end(undefined);
+      } catch (_) {}
+      this.sock = null;
+    }
+
+    this.wipeAuthFolder();
+
+    this.status = 'DISCONNECTED';
+    this.qrCodeRaw = null;
+    this.qrCodeDataUrl = null;
+    this.userProfile = null;
+    this.groupsCache = [];
+    this.isInitializing = false;
+
+    // Iniciar novo ciclo para gerar novo QR Code
+    setTimeout(() => {
+      this.init();
+    }, 1000);
+
+    return true;
   }
 
   async getGroups(forceRefresh = false) {
@@ -151,7 +243,7 @@ class WhatsAppManager {
       this.lastGroupsFetch = now;
       return list;
     } catch (err) {
-      console.error('[WhatsApp] Erro ao buscar grupos participantes:', err);
+      console.error('[WhatsApp] Erro ao buscar grupos participantes:', err.message);
       return this.groupsCache;
     }
   }

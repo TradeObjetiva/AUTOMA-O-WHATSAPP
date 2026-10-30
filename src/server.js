@@ -165,6 +165,11 @@ app.post('/api/whatsapp/logout', async (req, res) => {
   res.json({ success: ok });
 });
 
+app.post('/api/whatsapp/reset', async (req, res) => {
+  const ok = await whatsappManager.resetSession();
+  res.json({ success: ok, message: 'Sessão reiniciada. Novo QR Code em geração.' });
+});
+
 app.get('/api/whatsapp/groups', async (req, res) => {
   const force = req.query.force === 'true';
   const groups = await whatsappManager.getGroups(force);

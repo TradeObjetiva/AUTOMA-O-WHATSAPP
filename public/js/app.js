@@ -98,21 +98,28 @@ async function checkWhatsAppStatus() {
 }
 
 function renderQRView(qrDataUrl) {
-  waActions.innerHTML = '';
+  waActions.innerHTML = `
+    <button id="btn-reset-wa" class="btn btn-secondary btn-sm">🔄 Gerar Novo QR Code</button>
+  `;
+  document.getElementById('btn-reset-wa')?.addEventListener('click', () => handleResetSession('Deseja gerar um novo QR Code para ler no celular?'));
+
   waConnectionView.innerHTML = `
     <div class="qr-container">
       <div class="qr-box">
-        ${qrDataUrl ? `<img src="${qrDataUrl}" alt="WhatsApp QR Code">` : '<p style="color:#000;">Gerando QR Code...</p>'}
+        ${qrDataUrl ? `<img src="${qrDataUrl}" alt="WhatsApp QR Code">` : '<div class="pulse-dot" style="width:20px;height:20px;margin:2rem auto;"></div><p style="color:#000;">Gerando QR Code...</p>'}
       </div>
       <div class="qr-instructions">
-        <h3 style="color: var(--text-main); margin-bottom: 0.5rem;">Como conectar:</h3>
+        <h3 style="color: var(--text-main); margin-bottom: 0.5rem;">Como conectar seu WhatsApp:</h3>
         <ol>
-          <li>Abra o <strong>WhatsApp</strong> no celular que enviará as fotos</li>
+          <li>Abra o <strong>WhatsApp</strong> no celular que enviará as fotos nos grupos</li>
           <li>Toque em <strong>Mais opções</strong> (Android) ou <strong>Configurações</strong> (iPhone)</li>
           <li>Selecione <strong>Aparelhos conectados</strong> e depois <strong>Conectar um aparelho</strong></li>
           <li>Aponte a câmera para este QR Code na tela</li>
         </ol>
-        <p style="font-size: 0.8rem; color: var(--accent-amber);">O QR Code se atualiza automaticamente caso expire.</p>
+        <p style="font-size: 0.8rem; color: var(--accent-amber); margin-bottom: 0.8rem;">O QR Code se atualiza automaticamente caso expire.</p>
+        <button class="btn btn-secondary btn-sm" onclick="handleResetSession('Deseja limpar as credenciais antigas e conectar outro número de WhatsApp?')">
+          🔄 Conectar Outro Número / Resetar
+        </button>
       </div>
     </div>
   `;
@@ -120,8 +127,10 @@ function renderQRView(qrDataUrl) {
 
 function renderConnectedView(user) {
   waActions.innerHTML = `
+    <button id="btn-switch-wa" class="btn btn-warning btn-sm" title="Desconecta este número e gera QR para escanear outro celular">🔄 Conectar Outro WhatsApp</button>
     <button id="btn-logout" class="btn btn-danger btn-sm">🚪 Desconectar</button>
   `;
+  document.getElementById('btn-switch-wa')?.addEventListener('click', () => handleResetSession('Deseja desconectar esta conta atual e conectar um novo número de WhatsApp?'));
   document.getElementById('btn-logout')?.addEventListener('click', handleLogout);
 
   waConnectionView.innerHTML = `
@@ -134,9 +143,12 @@ function renderConnectedView(user) {
           <span class="badge badge-success" style="margin-top: 0.4rem;">Ativo para Disparos 24h</span>
         </div>
       </div>
-      <div>
+      <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
         <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-tab=tab-groups]').click()">
           👥 Ver Grupos Disponíveis
+        </button>
+        <button class="btn btn-warning btn-sm" onclick="handleResetSession('Deseja desconectar esta conta atual e conectar um novo número de WhatsApp?')">
+          🔄 Trocar para Outro WhatsApp
         </button>
       </div>
     </div>
@@ -144,35 +156,59 @@ function renderConnectedView(user) {
 }
 
 function renderConnectingView() {
-  waActions.innerHTML = '';
+  waActions.innerHTML = `
+    <button id="btn-reset-wa" class="btn btn-secondary btn-sm">🔄 Cancelar e Gerar Novo QR</button>
+  `;
+  document.getElementById('btn-reset-wa')?.addEventListener('click', () => handleResetSession('Deseja reiniciar a tentativa de conexão e gerar um QR Code novo?'));
+
   waConnectionView.innerHTML = `
     <div class="qr-container">
       <div class="pulse-dot" style="width: 20px; height: 20px; margin-bottom: 1rem; color: var(--accent-blue);"></div>
-      <p style="color: var(--text-main); font-weight: 600;">Inicializando motor de conexão com WhatsApp...</p>
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.4rem;">Aguarde alguns segundos.</p>
+      <p style="color: var(--text-main); font-weight: 600;">Estabilizando conexão com o WhatsApp...</p>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.4rem;">Aguarde alguns segundos ou clique em Cancelar para gerar um QR novo.</p>
     </div>
   `;
 }
 
 function renderDisconnectedView() {
-  waActions.innerHTML = '';
+  waActions.innerHTML = `
+    <button id="btn-reset-wa" class="btn btn-primary btn-sm">📲 Conectar WhatsApp (Novo QR)</button>
+  `;
+  document.getElementById('btn-reset-wa')?.addEventListener('click', () => handleResetSession());
+
   waConnectionView.innerHTML = `
     <div class="qr-container">
-      <p style="color: var(--text-main); font-weight: 600;">WhatsApp Desconectado</p>
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.4rem;">Tentando gerar novo QR Code para conexão...</p>
+      <p style="color: var(--text-main); font-weight: 600; font-size: 1.05rem;">WhatsApp Desconectado</p>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.4rem; max-width: 420px; margin: 0.4rem auto 1.2rem auto;">
+        Nenhum aparelho conectado no momento. Clique no botão abaixo para gerar um QR Code limpo e escanear com qualquer WhatsApp.
+      </p>
+      <button class="btn btn-primary" onclick="handleResetSession()">
+        📲 Gerar QR Code para Conectar WhatsApp
+      </button>
     </div>
   `;
 }
 
-async function handleLogout() {
-  if (!confirm('Deseja realmente desconectar esta conta de WhatsApp?')) return;
+async function handleResetSession(confirmMessage = 'Deseja desconectar a conta atual e gerar um novo QR Code para conectar outro WhatsApp?') {
+  if (confirmMessage && !confirm(confirmMessage)) return;
   try {
-    await fetch('/api/whatsapp/logout', { method: 'POST' });
-    showToast('WhatsApp desconectado.', 'info');
-    checkWhatsAppStatus();
+    showToast('Limpando sessão antiga e gerando novo QR Code...', 'info');
+    const res = await fetch('/api/whatsapp/reset', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Sessão resetada! Aponte o novo WhatsApp para o QR Code gerado.', 'success');
+      setTimeout(checkWhatsAppStatus, 1000);
+      setTimeout(checkWhatsAppStatus, 3000);
+    } else {
+      showToast('Erro ao reiniciar sessão.', 'error');
+    }
   } catch (err) {
-    showToast('Erro ao desconectar WhatsApp.', 'error');
+    showToast('Erro ao comunicar com o servidor.', 'error');
   }
+}
+
+async function handleLogout() {
+  await handleResetSession('Deseja realmente desconectar esta conta de WhatsApp?');
 }
 
 // 2. Grupos de WhatsApp
