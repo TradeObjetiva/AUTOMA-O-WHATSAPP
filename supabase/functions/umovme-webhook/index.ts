@@ -127,20 +127,46 @@ Deno.serve(async (req) => {
     }
     if (!notes) notes = "Sem observações adicionais";
 
+    // 4. Data, Loja e Rede do historyId
+    const historyStr = String(root.historyId || rawPayload.historyId || "");
+    let extractedStore = "";
+    let extractedNetwork = "";
+
+    if (historyStr) {
+      const storeMatch = historyStr.match(/Loja:\s*([^;]+)/i);
+      if (storeMatch && storeMatch[1]) extractedStore = storeMatch[1].trim();
+
+      const razaoMatch = historyStr.match(/Raz[ãa]o\s*Social:\s*([^;]+)/i);
+      if (!extractedStore && razaoMatch && razaoMatch[1]) extractedStore = razaoMatch[1].trim();
+
+      const networkMatch = historyStr.match(/Rede:\s*([^;]+)/i);
+      if (networkMatch && networkMatch[1]) extractedNetwork = networkMatch[1].trim();
+    }
+
     // Cliente e Rede
     const localObj = root.local || root.client || root.pdv || root.store || root.cliente || {};
-    let pdvName = (localObj.fantasyName || localObj.nomeFantasia || localObj.name || localObj.nome || root.pdvName || "").trim();
+    let pdvName = (
+      extractedStore ||
+      localObj.fantasyName ||
+      localObj.nomeFantasia ||
+      localObj.name ||
+      localObj.nome ||
+      root.pdvName ||
+      ""
+    ).trim();
+
     let pdvCode = String(localObj.externalCode || localObj.codigo || localObj.code || root.pdvCode || "S/C").trim();
-    let networkName = (urlNetwork || localObj.network || localObj.rede || localObj.chain || root.network || root.rede || "").trim();
+    let networkName = (urlNetwork || extractedNetwork || localObj.network || localObj.rede || localObj.chain || root.network || root.rede || "").trim();
     let clientName = (urlClient || localObj.clientName || root.clientName || root.marca || root.brand || root.cliente || "").trim();
 
     // Inferência inteligente se historyId tiver agência/rede
-    if (!networkName && root.historyId && typeof root.historyId === "string") {
-      const lowerHist = root.historyId.toLowerCase();
-      if (lowerHist.includes("objetiva")) networkName = "Objetiva";
+    const lowerHist = `${historyStr} ${pdvName}`.toLowerCase();
+    if (!networkName || networkName === "229436480" || /^\d+$/.test(networkName)) {
+      if (lowerHist.includes("zona sul")) networkName = "Zona Sul";
       else if (lowerHist.includes("mundial")) networkName = "Mundial";
       else if (lowerHist.includes("prezunic")) networkName = "Prezunic";
       else if (lowerHist.includes("guanabara")) networkName = "Guanabara";
+      else if (lowerHist.includes("objetiva")) networkName = "Objetiva";
     }
 
     if (!clientName) clientName = urlClient || "Fresk";
@@ -167,6 +193,8 @@ Deno.serve(async (req) => {
       for (const rule of (rules || [])) {
         if (rule.route_slug && slugify(rule.route_slug) === incomingSlug) {
           matchedGroups.set(rule.grupo_whatsapp_id, { id: rule.grupo_whatsapp_id, name: rule.grupo_whatsapp_nome });
+          if (rule.cliente) clientName = rule.cliente;
+          if (rule.rede) networkName = rule.rede;
         }
       }
     }
@@ -181,6 +209,8 @@ Deno.serve(async (req) => {
           const networkMatches = networkLower.includes(rRede) || pdvLower.includes(rRede) || rRede.includes(networkLower) || slugify(networkName) === slugify(rule.rede);
           if (clientMatches && networkMatches) {
             matchedGroups.set(rule.grupo_whatsapp_id, { id: rule.grupo_whatsapp_id, name: rule.grupo_whatsapp_nome });
+            if (rule.cliente) clientName = rule.cliente;
+            if (rule.rede) networkName = rule.rede;
           }
         }
       }
@@ -193,6 +223,7 @@ Deno.serve(async (req) => {
           const rClient = rule.cliente.toLowerCase();
           if (clientLower.includes(rClient) || rClient.includes(clientLower) || slugify(clientName) === slugify(rule.cliente)) {
             matchedGroups.set(rule.grupo_whatsapp_id, { id: rule.grupo_whatsapp_id, name: rule.grupo_whatsapp_nome });
+            if (rule.cliente) clientName = rule.cliente;
             break;
           }
         }

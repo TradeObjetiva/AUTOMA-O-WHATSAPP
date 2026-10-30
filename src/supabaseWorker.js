@@ -200,12 +200,36 @@ class SupabaseWorker {
         return;
       }
 
+      // Extrair Loja / PDV real do historyId caso venha genérico
+      let finalPdvName = (row.pdv_nome || '').trim();
+      const rawRoot = row.raw_payload || {};
+      const historyStr = String(rawRoot.historyId || rawRoot.data?.historyId || '');
+
+      if (!finalPdvName || finalPdvName === 'Loja em Campo' || finalPdvName === 'PDV Geral') {
+        const storeMatch = historyStr.match(/Loja:\s*([^;]+)/i);
+        if (storeMatch && storeMatch[1]) {
+          finalPdvName = storeMatch[1].trim();
+        } else {
+          const razaoMatch = historyStr.match(/Raz[ãa]o\s*Social:\s*([^;]+)/i);
+          if (razaoMatch && razaoMatch[1]) finalPdvName = razaoMatch[1].trim();
+        }
+      }
+      if (!finalPdvName) finalPdvName = row.rede ? `Rede ${row.rede}` : 'Loja em Campo';
+
+      // Limpar nome do cliente se veio em formato de slug
+      let finalClientName = (row.cliente || '').trim();
+      const mappings = Storage.getMappings();
+      const matchedRule = (mappings.rules || []).find(r => r.routeSlug === finalClientName || r.client?.toLowerCase() === finalClientName.toLowerCase());
+      if (matchedRule && matchedRule.client) {
+        finalClientName = matchedRule.client;
+      }
+
       const activity = {
         activityId: row.atividade_id,
         promoterName: row.promotor_nome || 'Promotor de Campo',
-        pdvName: row.pdv_nome || 'PDV Geral',
+        pdvName: finalPdvName,
         pdvCode: row.pdv_codigo || 'S/C',
-        clientName: row.cliente,
+        clientName: finalClientName,
         networkName: row.rede,
         activityName: row.tipo_atividade || 'Execução em PDV',
         date: row.data_execucao || new Date().toLocaleString('pt-BR'),
@@ -213,7 +237,7 @@ class SupabaseWorker {
         photoUrls: Array.isArray(row.fotos) ? row.fotos : []
       };
 
-      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} - ${activity.networkName}) para o WhatsApp...`);
+      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName}) para o WhatsApp...`);
 
       // Enfileirar na fila anti-ban do WhatsApp
       dispatchQueue.enqueueActivity(activity, targetGroups);

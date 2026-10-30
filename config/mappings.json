@@ -11,6 +11,18 @@
       "targetGroupId": "120363429489147083@g.us",
       "targetGroupName": "Teste fresk",
       "active": true
+    },
+    {
+      "id": "rule-1793373730982",
+      "name": "START QUÍMICA - Geral",
+      "client": "START QUÍMICA",
+      "network": "",
+      "routeSlug": "start-quimica",
+      "matchType": "pdv_contains",
+      "matchValue": "START QUÍMICA",
+      "targetGroupId": "120363430948573057@g.us",
+      "targetGroupName": "teste start",
+      "active": true
     }
   ]
 }
