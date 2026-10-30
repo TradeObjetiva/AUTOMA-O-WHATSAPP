@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade Marketing Hub | Umov.me ➔ WhatsApp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <div class="brand-text">
+        <h1>Trade Marketing Hub</h1>
+        <span><span class="pulse-dot"></span> Automação Umov.me ➔ WhatsApp 24h</span>
+      </div>
+    </div>
+    <div class="header-status">
+      <div id="status-badge" class="status-badge disconnected">
+        <span class="pulse-dot"></span>
+        <span id="status-text">Verificando...</span>
+      </div>
+      <button id="btn-refresh-all" class="btn btn-secondary btn-sm" title="Atualizar dados">
+        🔄 Atualizar
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="tab-overview">📊 Visão Geral & WhatsApp</button>
+    <button class="tab-btn" data-tab="tab-groups">👥 Grupos do WhatsApp</button>
+    <button class="tab-btn" data-tab="tab-mappings">🏢 Clientes & Redes (Webhooks)</button>
+    <button class="tab-btn" data-tab="tab-feed">📸 Feed de Atividades</button>
+    <button class="tab-btn" data-tab="tab-simulator">🧪 Simulador de Testes</button>
+    <button class="tab-btn" data-tab="tab-settings">⚙️ Configurações & 24 Horas</button>
+  </nav>
+
+  <!-- Main Content -->
+  <main>
+
+    <!-- Top KPI Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon" style="color: var(--accent-wa);">📱</div>
+        <div class="stat-info">
+          <h3>Status WhatsApp</h3>
+          <div id="stat-wa-status" class="stat-value">Desconectado</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="color: var(--accent-blue);">👥</div>
+        <div class="stat-info">
+          <h3>Grupos Disponíveis</h3>
+          <div id="stat-groups-count" class="stat-value">0</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="color: var(--accent-purple);">📥</div>
+        <div class="stat-info">
+          <h3>Atividades Recebidas</h3>
+          <div id="stat-activities-count" class="stat-value">0</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="color: var(--accent-amber);">⏳</div>
+        <div class="stat-info">
+          <h3>Fila Anti-Ban</h3>
+          <div id="stat-queue-count" class="stat-value">0 itens</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. TAB: VISÃO GERAL & CONEXÃO WHATSAPP -->
+    <div id="tab-overview" class="tab-pane active">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">📱 Conexão WhatsApp</h2>
+            <p class="card-subtitle">Conecte o número de WhatsApp responsável por disparar as fotos nos grupos da agência</p>
+          </div>
+          <div id="wa-connection-actions"></div>
+        </div>
+
+        <!-- Conteúdo dinâmico: QR Code ou Caixa Conectada -->
+        <div id="wa-connection-view">
+          <div class="qr-container">
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">Carregando status do serviço...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card do Webhook URL -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">⚡ Endpoint Central do Webhook Umov.me (Supabase Nuvem 24h)</h2>
+            <p class="card-subtitle">Endpoint em nuvem 24/7 ativo no Supabase Edge Functions. Para cada Cliente x Rede, uma URL dedicada é gerada automaticamente.</p>
+          </div>
+          <span class="badge badge-success" style="font-size: 0.8rem;">⚡ Supabase Edge 24h Ativo</span>
+        </div>
+        <div style="position: relative;">
+          <pre class="code-block"><span id="webhook-url-display">https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook</span></pre>
+          <button id="btn-copy-webhook" class="btn btn-secondary btn-sm code-copy-btn">📋 Copiar URL Central</button>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.8rem;">
+          💡 <strong>Webhooks Dedicados por Situação:</strong> Acesse a aba <strong>🏢 Clientes & Redes (Webhooks)</strong> para ver e copiar a URL exclusiva de cada Cliente x Rede cadastrada.
+        </p>
+      </div>
+    </div>
+
+    <!-- 2. TAB: GRUPOS DO WHATSAPP -->
+    <div id="tab-groups" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">👥 Grupos Detectados no WhatsApp</h2>
+            <p class="card-subtitle">Grupos em que a conta conectada está presente. Copie o ID (JID) para vincular às lojas ou clientes.</p>
+          </div>
+          <button id="btn-refresh-groups" class="btn btn-secondary btn-sm">
+            🔄 Recarregar Grupos
+          </button>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <input type="text" id="search-groups" class="form-input" style="max-width: 380px;" placeholder="🔍 Filtrar grupos por nome...">
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome do Grupo</th>
+                <th>ID do Grupo (JID)</th>
+                <th>Participantes</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="groups-table-body">
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--text-muted);">
+                  Conecte o WhatsApp para listar os grupos disponíveis.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. TAB: MAPEAMENTO DE CLIENTES & REDES (WEBHOOKS SEPARADOS) -->
+    <div id="tab-mappings" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">🏢 Separação de Webhooks por Clientes & Redes (Supabase Nuvem)</h2>
+            <p class="card-subtitle">Vincule cada Cliente (ex: <em>Arroz Fantástico</em>) e Rede (ex: <em>Mundial, Prezunic</em>) ao seu respectivo grupo de WhatsApp com URL dedicada na nuvem</p>
+          </div>
+          <button id="btn-toggle-add-rule" class="btn btn-primary btn-sm">
+            ➕ Nova Combinação Cliente x Rede
+          </button>
+        </div>
+
+        <!-- Formulário Nova Regra -->
+        <div id="form-new-rule-card" style="display: none; background: rgba(11, 15, 25, 0.7); padding: 1.4rem; border-radius: 14px; margin-bottom: 1.5rem; border: 1px solid var(--border-glow);">
+          <h3 style="font-size: 1rem; margin-bottom: 0.4rem; color: var(--accent-wa);">Nova Combinação: Cliente ➔ Rede ➔ Grupo (URL Supabase)</h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.2rem;">
+            O sistema gerará uma URL de Webhook exclusiva no <strong>Supabase Cloud (24h online)</strong> para você cadastrar na uMov.me. Quando o promotor finalizar a atividade nessa rede, as fotos irão direto para o grupo configurado.
+          </p>
+
+          <form id="form-new-rule">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>🏷️ Cliente / Marca</label>
+                <input type="text" id="rule-client" class="form-input" placeholder="Ex: Arroz Fantástico" required>
+              </div>
+              <div class="form-group">
+                <label>🏪 Rede de Varejo / Supermercado</label>
+                <input type="text" id="rule-network" class="form-input" placeholder="Ex: Mundial (ou vazio para Geral)">
+                <span style="font-size: 0.75rem; color: var(--text-dim);">Deixe vazio se for um grupo geral para todas as redes do cliente.</span>
+              </div>
+              <div class="form-group">
+                <label>📱 ID do Grupo WhatsApp (JID)</label>
+                <input type="text" id="rule-group-id" class="form-input" placeholder="Ex: 1203630...@g.us" required>
+              </div>
+              <div class="form-group">
+                <label>💬 Nome Amigável do Grupo</label>
+                <input type="text" id="rule-group-name" class="form-input" placeholder="Ex: Trade - Arroz Fantástico [Mundial]">
+              </div>
+            </div>
+
+            <!-- Preview da URL Webhook -->
+            <div style="background: rgba(0, 0, 0, 0.4); padding: 0.9rem; border-radius: 10px; border: 1px dashed var(--border-color); margin-bottom: 1.2rem;">
+              <span style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">🔗 URL Exclusiva do Webhook Supabase (Gerada Automaticamente):</span>
+              <code id="rule-url-preview" style="color: var(--accent-wa); font-size: 0.88rem; word-break: break-all;">https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook/cliente/rede</code>
+            </div>
+
+            <div style="display: flex; gap: 0.8rem; justify-content: flex-end;">
+              <button type="button" id="btn-cancel-rule" class="btn btn-secondary btn-sm">Cancelar</button>
+              <button type="submit" class="btn btn-primary btn-sm">💾 Salvar e Gerar Webhook</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tabela de Regras e Webhooks -->
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Cliente / Marca</th>
+                <th>Rede / Varejo</th>
+                <th>URL Dedicada do Webhook (Supabase Nuvem 24h)</th>
+                <th>Grupo WhatsApp Destino</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="rules-table-body">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando rotas de clientes e redes...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. TAB: FEED DE ATIVIDADES -->
+    <div id="tab-feed" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">📸 Histórico e Feed de Atividades</h2>
+            <p class="card-subtitle">Últimas atividades recebidas da Umov.me e status dos disparos de fotos</p>
+          </div>
+          <button id="btn-refresh-feed" class="btn btn-secondary btn-sm">
+            🔄 Atualizar Feed
+          </button>
+        </div>
+
+        <div id="activity-feed-list" class="activity-list">
+          <p style="text-align: center; color: var(--text-muted); padding: 2rem;">
+            Nenhuma atividade recebida até o momento. As fotos aparecerão aqui assim que os promotores finalizarem no app.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. TAB: SIMULADOR DE TESTES -->
+    <div id="tab-simulator" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">🧪 Simulador de Webhook da Umov.me</h2>
+            <p class="card-subtitle">Dispare uma atividade fictícia de teste com fotos reais para validar a chegada imediata no grupo do WhatsApp</p>
+          </div>
+        </div>
+
+        <form id="form-simulator">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>🏷️ Cliente / Marca</label>
+              <input type="text" id="sim-client" class="form-input" value="Arroz Fantástico">
+            </div>
+            <div class="form-group">
+              <label>🏪 Rede de Supermercado</label>
+              <input type="text" id="sim-network" class="form-input" value="Mundial">
+            </div>
+            <div class="form-group">
+              <label>📍 PDV / Loja (Nome Completo)</label>
+              <input type="text" id="sim-pdv" class="form-input" value="Supermercados Mundial - Loja Barra">
+            </div>
+            <div class="form-group">
+              <label>👤 Nome do Promotor(a)</label>
+              <input type="text" id="sim-promoter" class="form-input" value="Carlos Silva - Promotor">
+            </div>
+            <div class="form-group">
+              <label>📋 Tipo de Atividade</label>
+              <input type="text" id="sim-activity" class="form-input" value="Ponto Extra e Abastecimento de Gôndola">
+            </div>
+            <div class="form-group">
+              <label>📝 Observações do Promotor</label>
+              <input type="text" id="sim-notes" class="form-input" value="Organização 100% concluída, material POP instalado e estoque abastecido.">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label>URLs de Fotos de Teste (uma por linha)</label>
+            <textarea id="sim-photos" class="form-textarea" rows="3">https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800&auto=format&fit=crop&q=80
+https://images.unsplash.com/photo-1534723452862-4c874018d66d?w=800&auto=format&fit=crop&q=80</textarea>
+          </div>
+
+          <button type="submit" id="btn-submit-simulate" class="btn btn-primary">
+            🚀 Disparar Atividade de Teste Agora
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 6. TAB: CONFIGURAÇÕES & 24 HORAS -->
+    <div id="tab-settings" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">⚙️ Configurações da Fila Anti-Ban & Mensagens</h2>
+            <p class="card-subtitle">Ajuste intervalos e parâmetros de segurança para proteção do número de WhatsApp</p>
+          </div>
+        </div>
+
+        <form id="form-settings">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Intervalo Mínimo entre Fotos (Segundos)</label>
+              <input type="number" id="setting-min-delay" class="form-input" min="1" max="60" value="3">
+            </div>
+            <div class="form-group">
+              <label>Intervalo Máximo entre Fotos (Segundos)</label>
+              <input type="number" id="setting-max-delay" class="form-input" min="2" max="120" value="7">
+            </div>
+            <div class="form-group">
+              <label>Grupo Padrão de Fallback (JID)</label>
+              <input type="text" id="setting-default-group-id" class="form-input" placeholder="1203630...@g.us">
+            </div>
+            <div class="form-group">
+              <label>Nome do Grupo Padrão</label>
+              <input type="text" id="setting-default-group-name" class="form-input" placeholder="Geral Trade Marketing">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label>Template da Legenda da Foto</label>
+            <textarea id="setting-caption-template" class="form-textarea" rows="5"></textarea>
+            <span style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.3rem;">
+              Variáveis disponíveis: <code>{pdvName}</code>, <code>{pdvCode}</code>, <code>{promoterName}</code>, <code>{activityName}</code>, <code>{date}</code>, <code>{clientName}</code>, <code>{notes}</code>, <code>{photoIndex}</code>, <code>{totalPhotos}</code>
+            </span>
+          </div>
+
+          <!-- Credenciais Umov.me opcionais -->
+          <h3 style="font-size: 0.95rem; margin: 1.2rem 0 0.8rem 0; color: var(--accent-blue);">Credenciais uMov.me API (Para download de fotos autenticadas)</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>AppId uMov.me</label>
+              <input type="text" id="setting-umovme-appid" class="form-input" placeholder="Seu AppId da Umov.me (opcional)">
+            </div>
+            <div class="form-group">
+              <label>AppKey uMov.me</label>
+              <input type="password" id="setting-umovme-appkey" class="form-input" placeholder="Seu AppKey da Umov.me (opcional)">
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            💾 Salvar Configurações
+          </button>
+        </form>
+      </div>
+
+      <!-- Guia 24 Horas -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">🌐 Guia de Execução Contínua 24 Horas por Dia</h2>
+            <p class="card-subtitle">Como manter o sistema rodando ininterruptamente e expor o webhook para a Umov.me</p>
+          </div>
+        </div>
+
+        <div style="font-size: 0.9rem; line-height: 1.6; color: var(--text-muted);">
+          <h4 style="color: var(--text-main); margin-bottom: 0.5rem;">Passo 1: Rodar o processo em segundo plano com PM2 (Auto-Restart)</h4>
+          <p>O PM2 garante que mesmo se ocorrer qualquer erro não tratado ou reinício do servidor, a aplicação sobe novamente sozinha:</p>
+          <pre class="code-block">npx pm2 start src/server.js --name trade-hub
+npx pm2 save</pre>
+
+          <h4 style="color: var(--text-main); margin: 1.2rem 0 0.5rem 0;">Passo 2: Expor a URL para a Umov.me via Cloudflare Tunnel (HTTPS Grátis 24h)</h4>
+          <p>Para a Umov.me disparar o webhook na sua máquina ou VPS sem precisar abrir portas de roteador:</p>
+          <pre class="code-block">npx cloudflared tunnel --url http://localhost:3000</pre>
+          <p style="margin-top: 0.5rem;">
+            A Cloudflare fornecerá uma URL HTTPS segura como <code>https://exemplo-randomico.trycloudflare.com/api/webhook/umovme</code> para colocar no painel da Umov.me!
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Modal: Nova URL de Webhook Gerada via Supabase -->
+  <div id="modal-webhook-created" class="modal-backdrop" style="display: none;">
+    <div class="modal-box">
+      <div style="font-size: 2.4rem; margin-bottom: 0.5rem;">🎉</div>
+      <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">Nova Combinação Criada no Supabase!</h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.2rem; line-height: 1.5;">
+        A rota para <strong id="modal-client-label" style="color: var(--accent-wa);"></strong> [<span id="modal-network-label" style="color: var(--accent-blue);"></span>] vinculada ao grupo <strong id="modal-group-label" style="color: var(--text-main);"></strong> foi registrada com sucesso no banco Supabase.
+      </p>
+      
+      <div style="background: rgba(0, 0, 0, 0.5); padding: 1rem; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.3); margin-bottom: 1.4rem; text-align: left;">
+        <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 0.4rem;">🔗 URL Exclusiva para cadastrar na uMov.me:</span>
+        <code id="modal-generated-url" style="color: #38bdf8; font-size: 0.84rem; word-break: break-all; display: block;"></code>
+      </div>
+
+      <div style="display: flex; gap: 0.8rem; justify-content: flex-end;">
+        <button type="button" id="btn-modal-close" class="btn btn-secondary">Fechar</button>
+        <button type="button" id="btn-modal-copy" class="btn btn-primary">📋 Copiar URL do Webhook</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Trade Marketing Automation &copy; 2026 &bull; Integração Umov.me e Grupos de WhatsApp
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

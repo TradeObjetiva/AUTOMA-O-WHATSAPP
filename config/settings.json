@@ -1,0 +1,31 @@
+{
+  "general": {
+    "appName": "Trade Marketing - Umov.me ➔ WhatsApp",
+    "port": 3000,
+    "baseUrl": "http://localhost:3000",
+    "supabaseWebhookUrl": "https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook"
+  },
+  "whatsapp": {
+    "engine": "baileys",
+    "evolutionApiUrl": "",
+    "evolutionApiKey": "",
+    "evolutionInstance": "trade_mkt"
+  },
+  "umovme": {
+    "appId": "",
+    "appKey": "",
+    "downloadTimeoutMs": 15000
+  },
+  "queue": {
+    "minDelaySeconds": 3,
+    "maxDelaySeconds": 7,
+    "maxRetries": 3,
+    "sendSummaryCard": true,
+    "captionTemplate": "📸 *ATIVIDADE FINALIZADA - TRADE MARKETING*\n\n🏪 *PDV / Loja:* {pdvName} ({pdvCode})\n👤 *Promotor:* {promoterName}\n📋 *Atividade:* {activityName}\n📅 *Data/Hora:* {date}\n🏷️ *Cliente / Marca:* {clientName}\n📝 *Obs:* {notes}\n\n_Foto {photoIndex} de {totalPhotos}_"
+  },
+  "defaultGroup": {
+    "enabled": true,
+    "groupId": "",
+    "groupName": "Grupo Geral de Trade"
+  }
+}
