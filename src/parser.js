@@ -267,7 +267,8 @@ class UmovmeParser {
           const nextIndex = i + 1 < matches.length ? matches[i + 1].index : text.length;
           const segment = text.substring(current.index, nextIndex);
 
-          const urls = segment.split(/[\s;]+/)
+          const urlMatches = segment.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi) || [];
+          const urls = urlMatches
             .map(u => u.trim())
             .filter(u => u.startsWith('http') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
 
@@ -288,7 +289,8 @@ class UmovmeParser {
           });
         }
       } else {
-        const urls = text.split(/[\s;]+/)
+        const urlMatches = text.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi) || [];
+        const urls = urlMatches
           .map(u => u.trim())
           .filter(u => u.startsWith('http') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
 

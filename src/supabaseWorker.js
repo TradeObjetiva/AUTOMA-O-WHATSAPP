@@ -224,6 +224,21 @@ class SupabaseWorker {
         finalClientName = matchedRule.client;
       }
 
+      // Desmembrar URLs grudadas se houver
+      const rawPhotos = Array.isArray(row.fotos) ? row.fotos : [];
+      const cleanPhotos = [];
+      for (const item of rawPhotos) {
+        const str = typeof item === 'object' ? (item.url || '') : String(item || '');
+        const matches = str.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi);
+        if (matches && matches.length > 0) {
+          matches.forEach(m => {
+            if (m.startsWith('http')) cleanPhotos.push(m);
+          });
+        } else if (str.startsWith('http')) {
+          cleanPhotos.push(str);
+        }
+      }
+
       const activity = {
         activityId: row.atividade_id,
         promoterName: row.promotor_nome || 'Promotor de Campo',
@@ -234,10 +249,10 @@ class SupabaseWorker {
         activityName: row.tipo_atividade || 'Execução em PDV',
         date: row.data_execucao || new Date().toLocaleString('pt-BR'),
         notes: row.observacoes || '',
-        photoUrls: Array.isArray(row.fotos) ? row.fotos : []
+        photoUrls: cleanPhotos
       };
 
-      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName}) para o WhatsApp...`);
+      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName} | ${cleanPhotos.length} fotos) para o WhatsApp...`);
 
       // Enfileirar na fila anti-ban do WhatsApp
       dispatchQueue.enqueueActivity(activity, targetGroups);

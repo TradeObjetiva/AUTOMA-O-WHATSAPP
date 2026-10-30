@@ -70,7 +70,21 @@ class DispatchQueue {
       const maxDelay = (settings.queue?.maxDelaySeconds || 7) * 1000;
       const useEvolution = settings.whatsapp?.engine === 'evolution';
 
-      const photoUrls = current.activity.photoUrls;
+      // Desmembrar URLs coladas se houver
+      const ungluedPhotos = [];
+      for (const item of (current.activity.photoUrls || [])) {
+        const itemUrl = typeof item === 'object' ? (item.url || '') : String(item || '');
+        const matches = itemUrl.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi);
+        if (matches && matches.length > 1) {
+          matches.forEach((u, idx) => {
+            ungluedPhotos.push(typeof item === 'object' ? { ...item, url: u, label: idx === 0 ? item.label : '' } : u);
+          });
+        } else {
+          ungluedPhotos.push(item);
+        }
+      }
+
+      const photoUrls = ungluedPhotos;
       const totalPhotos = photoUrls.length;
 
       for (const group of current.targetGroups) {
@@ -108,16 +122,8 @@ class DispatchQueue {
 
               console.log(`[Fila] ✅ Foto ${photoIndex}/${totalPhotos} enviada ao grupo ${group.name} (${caption.split('\n')[0]})`);
             } catch (errPhoto) {
-              console.error(`[Fila] Erro ao processar/enviar foto ${photoIndex}:`, errPhoto.message);
-              // Tenta enviar mensagem de aviso no grupo caso o download da foto falhe
-              try {
-                const failNote = `⚠️ *Falha ao carregar foto ${photoIndex}/${totalPhotos}*\nAtividade: ${current.activity.activityName} - ${current.activity.pdvName}\nLink: ${photoUrl}`;
-                if (useEvolution) {
-                  await EvolutionApiClient.sendTextMessage(group.id, failNote);
-                } else {
-                  await whatsappManager.sendTextMessage(group.id, failNote);
-                }
-              } catch (_) {}
+              console.error(`[Fila] ⚠️ Falha ao baixar/enviar foto ${photoIndex}/${totalPhotos} (${photoUrl}): ${errPhoto.message}. Foto ignorada (não enviada ao WhatsApp).`);
+              // Não envia mensagem de erro para o WhatsApp do grupo do cliente para não poluir
             }
 
             // Intervalo humano e anti-ban entre fotos consecutivas

@@ -67,13 +67,13 @@ Deno.serve(async (req) => {
     // Normalizar dados da atividade
     const root = rawPayload.activity || rawPayload.data || rawPayload.evento || rawPayload;
 
-    // Extrair fotos de todo o payload (suporte a múltiplas URLs separadas por ';')
+    // Extrair fotos de todo o payload (suporte a múltiplas URLs separadas por ';' ou grudadas)
     const photoUrls: string[] = [];
     const inspectString = (str: string) => {
       if (typeof str !== "string" || !str.includes("http")) return;
-      const parts = str.split(/[\s;]+/);
-      for (const part of parts) {
-        const clean = part.trim();
+      const matches = str.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi) || [];
+      for (const m of matches) {
+        const clean = m.trim();
         if (clean.startsWith("http") && (clean.includes("picviewer.umov.me") || clean.includes("/Pic/") || clean.includes("/files/") || clean.match(/\.(jpe?g|png|webp|gif)/i))) {
           if (!photoUrls.includes(clean)) photoUrls.push(clean);
         }

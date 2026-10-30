@@ -6,8 +6,6 @@
       "client": "SEAL HORTIFRUTTI",
       "network": "",
       "routeSlug": "seal-hortifrutti",
-      "matchType": "pdv_contains",
-      "matchValue": "SEAL HORTIFRUTTI",
       "targetGroupId": "120363429489147083@g.us",
       "targetGroupName": "Teste fresk",
       "active": true
@@ -18,8 +16,6 @@
       "client": "START QUÍMICA",
       "network": "",
       "routeSlug": "start-quimica",
-      "matchType": "pdv_contains",
-      "matchValue": "START QUÍMICA",
       "targetGroupId": "120363430948573057@g.us",
       "targetGroupName": "teste start",
       "active": true
