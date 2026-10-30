@@ -252,7 +252,7 @@ class MessageRouter {
 
     if (photoCount > 0) {
       lines.push('');
-      lines.push('📸 Fotos de Antes/Depois a seguir 👇');
+      lines.push('📸Antes/Depois a seguir 👇');
     }
 
     return lines.join('\n');
