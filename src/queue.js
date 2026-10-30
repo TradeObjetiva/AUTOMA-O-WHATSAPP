@@ -74,7 +74,7 @@ class DispatchQueue {
       const ungluedPhotos = [];
       for (const item of (current.activity.photoUrls || [])) {
         const itemUrl = typeof item === 'object' ? (item.url || '') : String(item || '');
-        const matches = itemUrl.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi);
+        const matches = itemUrl.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi);
         if (matches && matches.length > 1) {
           matches.forEach((u, idx) => {
             ungluedPhotos.push(typeof item === 'object' ? { ...item, url: u, label: idx === 0 ? item.label : '' } : u);

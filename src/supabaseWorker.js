@@ -224,20 +224,28 @@ class SupabaseWorker {
         finalClientName = matchedRule.client;
       }
 
-      // Desmembrar URLs grudadas se houver
-      const rawPhotos = Array.isArray(row.fotos) ? row.fotos : [];
+      // Desmembrar URLs e também verificar se há mais fotos no raw_payload
       const cleanPhotos = [];
-      for (const item of rawPhotos) {
-        const str = typeof item === 'object' ? (item.url || '') : String(item || '');
-        const matches = str.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi);
-        if (matches && matches.length > 0) {
-          matches.forEach(m => {
-            if (m.startsWith('http')) cleanPhotos.push(m);
-          });
-        } else if (str.startsWith('http')) {
-          cleanPhotos.push(str);
+      const extractUrls = (val) => {
+        if (!val) return;
+        if (typeof val === 'string' && val.includes('http')) {
+          const matches = val.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
+          for (const m of matches) {
+            if (m.includes('picviewer.umov.me') || m.includes('/Pic/') || m.includes('/files/') || m.match(/\.(jpe?g|png|webp|gif)/i)) {
+              if (!cleanPhotos.includes(m)) cleanPhotos.push(m);
+            }
+          }
+        } else if (Array.isArray(val)) {
+          val.forEach(extractUrls);
+        } else if (typeof val === 'object') {
+          Object.values(val).forEach(extractUrls);
         }
-      }
+      };
+
+      // 1. Fotos cadastradas na coluna fotos
+      extractUrls(row.fotos);
+      // 2. Fotos presentes no raw_payload (activityId, clientId, etc.)
+      extractUrls(row.raw_payload);
 
       const activity = {
         activityId: row.atividade_id,

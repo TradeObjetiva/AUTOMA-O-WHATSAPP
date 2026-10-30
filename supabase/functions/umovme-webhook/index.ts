@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     const photoUrls: string[] = [];
     const inspectString = (str: string) => {
       if (typeof str !== "string" || !str.includes("http")) return;
-      const matches = str.match(/https?:\/\/[^\s;]+?(?=https?:\/\/|$)/gi) || [];
+      const matches = str.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
       for (const m of matches) {
         const clean = m.trim();
         if (clean.startsWith("http") && (clean.includes("picviewer.umov.me") || clean.includes("/Pic/") || clean.includes("/files/") || clean.match(/\.(jpe?g|png|webp|gif)/i))) {
