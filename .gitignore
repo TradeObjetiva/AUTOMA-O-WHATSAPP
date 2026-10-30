@@ -18,5 +18,6 @@ data/logs/
 Thumbs.db
 *.swp
 *.bak
-.vscode/
-.idea/
+# Supabase
+supabase/.temp/
+.temp/

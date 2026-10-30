@@ -29,9 +29,15 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const pathParts = url.pathname.replace(/^\/functions\/v1\/umovme-webhook\/?/, "").split("/").filter(Boolean);
-    const urlClient = pathParts[0] || url.searchParams.get("client") || url.searchParams.get("cliente") || null;
-    const urlNetwork = pathParts[1] || url.searchParams.get("network") || url.searchParams.get("rede") || null;
+    const cleanPath = url.pathname.replace(/^.*\/umovme-webhook\/?/i, "");
+    const pathParts = cleanPath.split("/").filter(Boolean);
+    let urlClient = pathParts[0] || url.searchParams.get("client") || url.searchParams.get("cliente") || null;
+    let urlNetwork = pathParts[1] || url.searchParams.get("network") || url.searchParams.get("rede") || null;
+
+    if (urlClient && urlClient.toLowerCase() === "umovme-webhook") {
+      urlClient = pathParts[1] || null;
+      urlNetwork = pathParts[2] || null;
+    }
 
     // Obter payload
     let rawPayload: any = {};

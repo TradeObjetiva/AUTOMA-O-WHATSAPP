@@ -1,73 +1,15 @@
 {
   "rules": [
     {
-      "id": "rule-fantastico-mundial",
-      "name": "Arroz Fantástico - Rede Mundial",
-      "client": "Arroz Fantástico",
-      "network": "Mundial",
-      "routeSlug": "arroz-fantastico/mundial",
-      "targetGroupId": "120363423999295708@g.us",
-      "targetGroupName": "ARROZ FANTÁSTICO MUNDIAL",
-      "active": true
-    },
-    {
-      "id": "rule-fantastico-geral",
-      "name": "Arroz Fantástico - Geral",
-      "client": "Arroz Fantástico",
+      "id": "rule-1793365962967",
+      "name": "SEAL HORTIFRUTTI - Geral",
+      "client": "SEAL HORTIFRUTTI",
       "network": "",
-      "routeSlug": "arroz-fantastico",
-      "targetGroupId": "120363421654515467@g.us",
-      "targetGroupName": "ARROZ FANTÁSTICO- OBJETIVA RJ",
-      "active": true
-    },
-    {
-      "id": "rule-fresk-objetiva",
-      "name": "Fresk - Rede Objetiva",
-      "client": "Fresk",
-      "network": "Objetiva",
-      "routeSlug": "fresk/objetiva",
+      "routeSlug": "seal-hortifrutti",
+      "matchType": "pdv_contains",
+      "matchValue": "SEAL HORTIFRUTTI",
       "targetGroupId": "120363429489147083@g.us",
       "targetGroupName": "Teste fresk",
-      "active": true
-    },
-    {
-      "id": "rule-reserva-mundial",
-      "name": "Reserva de Minas - Rede Mundial",
-      "client": "Reserva de Minas",
-      "network": "Mundial",
-      "routeSlug": "reserva-de-minas/mundial",
-      "targetGroupId": "120363424323586858@g.us",
-      "targetGroupName": "RESERVA DE MINAS -MUNDIAL",
-      "active": true
-    },
-    {
-      "id": "rule-reserva-prezunic",
-      "name": "Reserva de Minas - Rede Prezunic",
-      "client": "Reserva de Minas",
-      "network": "Prezunic",
-      "routeSlug": "reserva-de-minas/prezunic",
-      "targetGroupId": "120363393946676739@g.us",
-      "targetGroupName": "RESERVA DE MINAS - PREZUNIC",
-      "active": true
-    },
-    {
-      "id": "rule-kian-prezunic",
-      "name": "Kian - Rede Prezunic",
-      "client": "Kian",
-      "network": "Prezunic",
-      "routeSlug": "kian/prezunic",
-      "targetGroupId": "5521985520529-1567606152@g.us",
-      "targetGroupName": "KIAN - PREZUNIC💡COMP",
-      "active": true
-    },
-    {
-      "id": "rule-kian-guanabara",
-      "name": "Kian - Rede Guanabara",
-      "client": "Kian",
-      "network": "Guanabara",
-      "routeSlug": "kian/guanabara",
-      "targetGroupId": "120363201663364688@g.us",
-      "targetGroupName": "KIAN - GUANABARA 💡COMP",
       "active": true
     }
   ]
