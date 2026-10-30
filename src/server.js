@@ -67,6 +67,16 @@ app.use(['/api/webhook', '/webhook'], (req, res, next) => {
 // Servir frontend dashboard
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Health check para Render, UptimeRobot e monitoramento de disponibilidade
+app.get(['/health', '/api/status', '/healthz'], (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.round(process.uptime()),
+    whatsapp: whatsappManager.status,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // -------------------------------------------------------------
 // 1. ENDPOINTS WEBHOOK UMOV.ME (Recepção por Cliente e Rede)
 // -------------------------------------------------------------

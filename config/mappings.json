@@ -19,6 +19,18 @@
       "targetGroupId": "120363430948573057@g.us",
       "targetGroupName": "teste start",
       "active": true
+    },
+    {
+      "id": "rule-1793375037102",
+      "name": "fresk - Geral",
+      "client": "fresk",
+      "network": "",
+      "routeSlug": "fresk",
+      "matchType": "pdv_contains",
+      "matchValue": "fresk",
+      "targetGroupId": "120363429489147083@g.us",
+      "targetGroupName": "fresk [Geral]",
+      "active": true
     }
   ]
 }

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: automacao-whatsapp
+    runtime: node
+    plan: free # altere para starter se desejar anexar Persistent Disk (R$ 35/mês)
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
