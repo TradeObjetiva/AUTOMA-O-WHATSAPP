@@ -259,6 +259,14 @@ class SupabaseWorker {
         });
       }
 
+      // 7. Descartar fotos de placeholder do uMov.me (MEDIA COMING SOON / nomedia.png)
+      if (Array.isArray(activity.photoUrls)) {
+        activity.photoUrls = activity.photoUrls.filter(p => {
+          const u = typeof p === 'object' ? p.url : p;
+          return !u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/');
+        });
+      }
+
       console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName} | ${activity.photoUrls.length} fotos + Mix no texto: ${Boolean(activity.fotoDoMix)}) para o WhatsApp...`);
 
       // Enfileirar na fila anti-ban do WhatsApp

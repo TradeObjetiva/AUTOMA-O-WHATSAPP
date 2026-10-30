@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       const matches = str.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
       for (const m of matches) {
         const clean = m.trim();
-        if (clean.startsWith("http") && (clean.includes("picviewer.umov.me") || clean.includes("/Pic/") || clean.includes("/files/") || clean.match(/\.(jpe?g|png|webp|gif)/i))) {
+        if (clean.startsWith("http") && !clean.toLowerCase().includes("nomedia") && !clean.toLowerCase().includes("/logo/") && (clean.includes("picviewer.umov.me") || clean.includes("/Pic/") || clean.includes("/files/") || clean.match(/\.(jpe?g|png|webp|gif)/i))) {
           // Se fizer parte da Foto do Mix, guarda separadamente para o texto e não coloca na lista de fotos enviadas como arquivo
           if (str.toLowerCase().includes("foto do mix") || (keyName && keyName.toLowerCase().includes("mix"))) {
             if (!fotoDoMixLink) fotoDoMixLink = clean;

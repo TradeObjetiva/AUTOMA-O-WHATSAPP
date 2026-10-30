@@ -70,14 +70,19 @@ class DispatchQueue {
       const maxDelay = (settings.queue?.maxDelaySeconds || 7) * 1000;
       const useEvolution = settings.whatsapp?.engine === 'evolution';
 
-      // Desmembrar URLs coladas se houver
+      // Desmembrar URLs coladas se houver e descartar placeholders nomedia
       const ungluedPhotos = [];
       for (const item of (current.activity.photoUrls || [])) {
         const itemUrl = typeof item === 'object' ? (item.url || '') : String(item || '');
+        if (itemUrl.toLowerCase().includes('nomedia') || itemUrl.toLowerCase().includes('/logo/')) {
+          continue;
+        }
         const matches = itemUrl.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi);
         if (matches && matches.length > 1) {
           matches.forEach((u, idx) => {
-            ungluedPhotos.push(typeof item === 'object' ? { ...item, url: u, label: idx === 0 ? item.label : '' } : u);
+            if (!u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/')) {
+              ungluedPhotos.push(typeof item === 'object' ? { ...item, url: u, label: idx === 0 ? item.label : '' } : u);
+            }
           });
         } else {
           ungluedPhotos.push(item);

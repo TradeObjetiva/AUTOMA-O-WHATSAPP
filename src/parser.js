@@ -270,7 +270,7 @@ class UmovmeParser {
           const urlMatches = segment.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
           const urls = urlMatches
             .map(u => u.trim())
-            .filter(u => u.startsWith('http') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
+            .filter(u => u.startsWith('http') && !u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
 
           let categoryLabel = 'FOTO DO ANTES';
           const lowerTag = current.tag.toLowerCase();
@@ -292,7 +292,7 @@ class UmovmeParser {
         const urlMatches = text.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi) || [];
         const urls = urlMatches
           .map(u => u.trim())
-          .filter(u => u.startsWith('http') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
+          .filter(u => u.startsWith('http') && !u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/') && (u.includes('umov.me') || u.match(/\.(jpe?g|png|webp|gif)/i)));
 
         urls.forEach(url => {
           if (!photoMap.has(url)) {
@@ -332,6 +332,12 @@ class UmovmeParser {
   static async downloadPhoto(url) {
     const settings = Storage.getSettings();
     const cleanUrl = typeof url === 'object' ? url.url : url;
+
+    // Se a URL for explicitamente de placeholder do uMov.me
+    if (cleanUrl.toLowerCase().includes('nomedia') || cleanUrl.toLowerCase().includes('/logo/')) {
+      throw new Error('Placeholder "MEDIA COMING SOON" descartado por URL.');
+    }
+
     const headers = {
       'User-Agent': 'Trade-Marketing-Integration/1.0'
     };
@@ -347,7 +353,16 @@ class UmovmeParser {
       timeout: settings.umovme?.downloadTimeoutMs || 30000
     });
 
-    return Buffer.from(response.data);
+    const buf = Buffer.from(response.data);
+
+    // Verificação de segurança: hash do placeholder "MEDIA COMING SOON"
+    const crypto = require('crypto');
+    const md5 = crypto.createHash('md5').update(buf).digest('hex');
+    if (md5 === '283c5b9f4af1f9898f97dad66ccb6e52' || buf.length === 12413) {
+      throw new Error('Placeholder "MEDIA COMING SOON" descartado por assinatura de imagem.');
+    }
+
+    return buf;
   }
 }
 
