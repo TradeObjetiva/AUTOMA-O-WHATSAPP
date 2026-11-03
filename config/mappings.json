@@ -26,10 +26,18 @@
       "client": "fresk",
       "network": "",
       "routeSlug": "fresk",
-      "matchType": "pdv_contains",
-      "matchValue": "fresk",
       "targetGroupId": "120363429489147083@g.us",
       "targetGroupName": "fresk [Geral]",
+      "active": true
+    },
+    {
+      "id": "rule-1793384682468",
+      "name": "KICALDO - Geral",
+      "client": "KICALDO",
+      "network": "",
+      "routeSlug": "kicaldo",
+      "targetGroupId": "120363429489147083@g.us",
+      "targetGroupName": "KICALDO [Geral]",
       "active": true
     }
   ]
