@@ -147,6 +147,10 @@ class SupabaseWorker {
           (payload) => {
             console.log('[Supabase Realtime] ⚡ Nova atividade recebida em tempo real via Supabase:', payload.new?.atividade_id);
             if (payload.new?.status === 'PENDENTE') {
+              if (!whatsappManager.sock || whatsappManager.status !== 'CONNECTED') {
+                console.warn('[Supabase Realtime] WhatsApp desconectado nesta instância. Mantendo atividade como PENDENTE no banco.');
+                return;
+              }
               this.handleActivityRow(payload.new);
             }
           }
@@ -184,6 +188,10 @@ class SupabaseWorker {
   }
 
   async handleActivityRow(row) {
+    if (!this.enabled || !whatsappManager.sock || whatsappManager.status !== 'CONNECTED') {
+      console.warn(`[Supabase Worker] WhatsApp não conectado. Atividade #${row?.atividade_id} permanece na fila.`);
+      return;
+    }
     try {
       // Marcar como PROCESSANDO no Supabase para evitar envio duplo
       await this.client
