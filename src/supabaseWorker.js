@@ -67,7 +67,7 @@ class SupabaseWorker {
 
   init() {
     const supabaseUrl = process.env.SUPABASE_URL || 'https://vuvchcevhezkxhmlxgrz.supabase.co';
-    const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY;
+    const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1dmNoY2V2aGV6a3hobWx4Z3J6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyOTMyNzAsImV4cCI6MjEwODg2OTI3MH0.Q9sxCNrwLkey11tZQA5Bye5m51v6kOa-7-TfzVzTiH0';
 
     if (!supabaseUrl || !supabaseKey) {
       console.log('[Supabase Worker] Credenciais não configuradas. Operando com armazenamento local.');
