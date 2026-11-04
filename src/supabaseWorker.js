@@ -5,6 +5,13 @@ const dispatchQueue = require('./queue');
 const whatsappManager = require('./whatsapp');
 const UmovmeParser = require('./parser');
 
+// Polyfill de WebSocket para Node < 22 (necessário para Supabase Realtime)
+if (typeof globalThis.WebSocket === 'undefined') {
+  try {
+    globalThis.WebSocket = require('ws');
+  } catch (_) {}
+}
+
 class SupabaseWorker {
   constructor() {
     this.client = null;
