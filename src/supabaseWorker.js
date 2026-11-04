@@ -4,6 +4,7 @@ const Storage = require('./storage');
 const dispatchQueue = require('./queue');
 const whatsappManager = require('./whatsapp');
 const UmovmeParser = require('./parser');
+const MessageRouter = require('./router');
 
 // Polyfill de WebSocket para Node < 22 (necessário para Supabase Realtime)
 if (typeof globalThis.WebSocket === 'undefined') {
@@ -493,6 +494,141 @@ class SupabaseWorker {
       console.error('[Supabase Worker] Exceção ao carregar histórico 7 dias:', err.message);
       return Storage.getHistory(500);
     }
+  }
+
+  /**
+   * Reenvia uma atividade específica que deu falha (ERRO / SEM_GRUPO / PENDENTE travado)
+   */
+  async retryActivity(idOrActivityId) {
+    if (!this.enabled || !this.client) {
+      this.init();
+    }
+    if (!this.client) {
+      throw new Error('Supabase não está conectado no momento.');
+    }
+
+    const cleanId = String(idOrActivityId || '').trim();
+    if (!cleanId) {
+      throw new Error('ID da atividade inválido.');
+    }
+
+    // Buscar pelo id da linha ou pelo atividade_id
+    let row = null;
+    const { data: byId } = await this.client
+      .from('atividades_umovme')
+      .select('*')
+      .eq('id', cleanId)
+      .maybeSingle();
+
+    if (byId) {
+      row = byId;
+    } else {
+      const { data: byActId } = await this.client
+        .from('atividades_umovme')
+        .select('*')
+        .eq('atividade_id', cleanId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (byActId && byActId.length > 0) {
+        row = byActId[0];
+      }
+    }
+
+    if (!row) {
+      throw new Error(`Atividade #${cleanId} não encontrada no banco de dados.`);
+    }
+
+    // Se estava sem grupo mapeado antes, tentar resolver os grupos novamente pelas regras atuais
+    let targetGroups = Array.isArray(row.grupos_destino) ? row.grupos_destino : [];
+    if (targetGroups.length === 0) {
+      const rawRoot = row.raw_payload || {};
+      const activity = UmovmeParser.extractActivityData(rawRoot, {
+        urlClient: row.cliente,
+        urlNetwork: row.rede
+      });
+      const resolved = MessageRouter.resolveTargetGroups(activity, {
+        urlClient: row.cliente,
+        urlNetwork: row.rede
+      });
+      if (resolved && resolved.length > 0) {
+        targetGroups = resolved;
+        row.grupos_destino = resolved;
+      }
+    }
+
+    if (targetGroups.length === 0) {
+      throw new Error(`Ainda não há grupo mapeado para o cliente "${row.cliente || 'N/A'}". Cadastre a regra na aba Clientes & Redes antes de reenviar.`);
+    }
+
+    // Limpar trava em memória e atualizar para PENDENTE no Supabase
+    this.processingRowIds.delete(row.id);
+    if (row.atividade_id) this.processingRowIds.delete(row.atividade_id);
+
+    await this.client
+      .from('atividades_umovme')
+      .update({
+        status: 'PENDENTE',
+        erro: null,
+        grupos_destino: targetGroups,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', row.id);
+
+    row.status = 'PENDENTE';
+    row.erro = null;
+
+    // Disparar imediatamente se o WhatsApp estiver conectado
+    if (whatsappManager.sock && whatsappManager.status === 'CONNECTED') {
+      this.handleActivityRow(row);
+    }
+
+    return {
+      success: true,
+      activityId: row.atividade_id || row.id,
+      pdvName: row.pdv_nome || 'Loja em Campo'
+    };
+  }
+
+  /**
+   * Reenvia em lote todas as atividades com status ERRO ou SEM_GRUPO dos últimos 7 dias
+   */
+  async retryAllFailed() {
+    if (!this.enabled || !this.client) {
+      this.init();
+    }
+    if (!this.client) {
+      throw new Error('Supabase não conectado.');
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.client
+      .from('atividades_umovme')
+      .select('*')
+      .in('status', ['ERRO', 'SEM_GRUPO'])
+      .gte('created_at', sevenDaysAgo)
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data || data.length === 0) {
+      return { count: 0, message: 'Nenhuma atividade com falha encontrada nos últimos 7 dias.' };
+    }
+
+    let retriedCount = 0;
+    for (const row of data) {
+      try {
+        await this.retryActivity(row.id);
+        retriedCount++;
+      } catch (_) {}
+    }
+
+    return {
+      count: retriedCount,
+      message: `${retriedCount} atividade(s) recolocada(s) na fila de envio com sucesso!`
+    };
   }
 }
 

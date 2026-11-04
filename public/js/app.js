@@ -694,17 +694,36 @@ function renderActivityFeed(items) {
     if (item.status === 'FAILED') statusBadge = '<span class="badge badge-danger">❌ Falha no Envio</span>';
     if (item.status === 'IGNORED_NO_GROUP') statusBadge = '<span class="badge badge-warning">⚠️ Sem Grupo Mapeado</span>';
 
+    const targetId = item.id || item.activityId;
+    let retryBtnHtml = '';
+    if (item.status === 'FAILED' || item.status === 'IGNORED_NO_GROUP') {
+      retryBtnHtml = `
+        <button type="button" class="btn btn-primary btn-sm" onclick="retrySingleActivity('${escapeHtml(String(targetId))}', this)" style="padding: 0.28rem 0.65rem; font-size: 0.76rem; border-radius: 7px;">
+          🔄 Reenviar Agora
+        </button>
+      `;
+    } else if (item.status === 'QUEUED') {
+      retryBtnHtml = `
+        <button type="button" class="btn btn-secondary btn-sm" onclick="retrySingleActivity('${escapeHtml(String(targetId))}', this)" title="Forçar reenvio imediato" style="padding: 0.25rem 0.55rem; font-size: 0.74rem; border-radius: 7px;">
+          ⚡ Disparar
+        </button>
+      `;
+    }
+
     const clientTag = item.clientName
       ? `<span class="badge badge-info" style="margin-right: 0.4rem;">🏷️ ${escapeHtml(item.clientName)}</span>`
       : '';
 
     return `
       <div class="activity-item">
-        <div class="activity-avatar">${item.status === 'COMPLETED' ? '✅' : item.status === 'PROCESSING' ? '📤' : '📸'}</div>
+        <div class="activity-avatar">${item.status === 'COMPLETED' ? '✅' : item.status === 'PROCESSING' ? '📤' : item.status === 'FAILED' ? '❌' : '📸'}</div>
         <div class="activity-details">
-          <div class="activity-header-line">
+          <div class="activity-header-line" style="flex-wrap: wrap; gap: 0.5rem;">
             <span class="activity-title-text">${clientTag}${escapeHtml(item.pdvName || 'PDV')} &bull; ${escapeHtml(item.activityName || 'Atividade')}</span>
-            ${statusBadge}
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              ${statusBadge}
+              ${retryBtnHtml}
+            </div>
           </div>
           <div class="activity-meta">
             <span>👤 Promotor: <strong>${escapeHtml(item.promoterName || 'N/A')}</strong></span>
@@ -718,6 +737,57 @@ function renderActivityFeed(items) {
     `;
   }).join('');
 }
+
+window.retrySingleActivity = async function(id, btnEl) {
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = '⏳ Reenviando...';
+  }
+  try {
+    const res = await fetch(`/api/history/retry/${encodeURIComponent(id)}`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`Atividade (${data.pdvName || id}) recolocada na fila de envio!`, 'success');
+      setTimeout(loadHistory, 800);
+      setTimeout(checkQueue, 800);
+    } else {
+      showToast(data.error || 'Não foi possível reenviar esta atividade.', 'error');
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = '🔄 Reenviar Agora';
+      }
+    }
+  } catch (err) {
+    showToast('Erro de comunicação com o servidor.', 'error');
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = '🔄 Reenviar Agora';
+    }
+  }
+};
+
+document.getElementById('btn-retry-all-failed')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ Reenfileirando...';
+  try {
+    const res = await fetch('/api/history/retry-all-failed', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || 'Atividades reenfileiradas!', data.count > 0 ? 'success' : 'info');
+      setTimeout(loadHistory, 800);
+      setTimeout(checkQueue, 800);
+    } else {
+      showToast(data.error || 'Erro ao reenviar atividades com falha.', 'error');
+    }
+  } catch (err) {
+    showToast('Erro ao conectar ao servidor.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
 
 document.getElementById('btn-refresh-feed')?.addEventListener('click', loadHistory);
 document.getElementById('feed-filter-day')?.addEventListener('change', () => {

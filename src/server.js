@@ -380,6 +380,24 @@ app.get('/api/history', async (req, res) => {
   }
 });
 
+app.post('/api/history/retry-all-failed', async (req, res) => {
+  try {
+    const result = await supabaseWorker.retryAllFailed();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/history/retry/:id', async (req, res) => {
+  try {
+    const result = await supabaseWorker.retryActivity(decodeURIComponent(req.params.id));
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 5. SIMULADOR DE ATIVIDADE UMOV.ME (Teste imediato)
 // -------------------------------------------------------------
