@@ -284,9 +284,14 @@ app.get('/api/queue', (req, res) => {
   res.json(dispatchQueue.getQueueStatus());
 });
 
-app.get('/api/history', (req, res) => {
-  const limit = parseInt(req.query.limit) || 50;
-  res.json(Storage.getHistory(limit));
+app.get('/api/history', async (req, res) => {
+  try {
+    const history7d = await supabaseWorker.getHistoryLast7Days();
+    res.json(history7d);
+  } catch (err) {
+    const limit = parseInt(req.query.limit) || 200;
+    res.json(Storage.getHistory(limit));
+  }
 });
 
 // -------------------------------------------------------------
@@ -373,4 +378,11 @@ app.listen(PORT, async () => {
   whatsappManager.init().catch(err => {
     console.error('[WhatsApp] Falha ao iniciar:', err?.message || err);
   });
+
+  // Auto-Ping Keep-Alive a cada 10 minutos para evitar hibernação no Render Free
+  const externalUrl = process.env.RENDER_EXTERNAL_URL || 'https://automa-o-whatsapp-hghk.onrender.com';
+  setInterval(() => {
+    const axios = require('axios');
+    axios.get(`${externalUrl}/health`).catch(() => {});
+  }, 10 * 60 * 1000);
 });

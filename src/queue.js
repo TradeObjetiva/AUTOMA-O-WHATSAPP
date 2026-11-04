@@ -16,32 +16,66 @@ class DispatchQueue {
   constructor() {
     this.queue = [];
     this.isProcessing = false;
+    this.currentItem = null;
   }
 
   /**
-   * Adiciona uma atividade normalizada à fila de envio
+   * Retorna mapa de atividades atualmente em processamento ou na fila em memória
    */
-  enqueueActivity(activity, targetGroups) {
+  getActiveActivityMap() {
+    const map = {};
+    for (const q of this.queue) {
+      if (q.activity?.activityId) {
+        map[q.activity.activityId] = 'QUEUED';
+      }
+    }
+    if (this.currentItem && this.currentItem.activity?.activityId) {
+      map[this.currentItem.activity.activityId] = 'PROCESSING';
+    }
+    return map;
+  }
+
+  /**
+   * Adiciona uma atividade normalizada à fila de envio (com proteção contra duplicidade)
+   */
+  enqueueActivity(activity, targetGroups, options = {}) {
+    const actId = activity?.activityId;
+    if (actId) {
+      if (this.currentItem && this.currentItem.activity?.activityId === actId) {
+        console.log(`[Fila] ⚠️ Atividade #${actId} já está sendo processada no momento. Ignorando duplicata.`);
+        return this.currentItem;
+      }
+      const existing = this.queue.find(q => q.activity?.activityId === actId);
+      if (existing) {
+        console.log(`[Fila] ⚠️ Atividade #${actId} já está na fila de espera. Ignorando duplicata.`);
+        return existing;
+      }
+    }
+
     const queueItem = {
       id: `queue-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       activity,
       targetGroups,
       enqueuedAt: new Date().toISOString(),
       status: 'QUEUED', // QUEUED, PROCESSING, COMPLETED, FAILED
-      retries: 0
+      retries: 0,
+      onComplete: typeof options.onComplete === 'function' ? options.onComplete : null,
+      onFail: typeof options.onFail === 'function' ? options.onFail : null
     };
 
     this.queue.push(queueItem);
 
-    // Registra entrada no histórico
+    // Registra entrada no histórico local
     Storage.addHistoryEntry({
       id: queueItem.id,
       activityId: activity.activityId,
+      clientName: activity.clientName || '',
+      networkName: activity.networkName || '',
       pdvName: activity.pdvName,
       promoterName: activity.promoterName,
       activityName: activity.activityName,
       date: activity.date,
-      photoCount: activity.photoUrls.length,
+      photoCount: (activity.photoUrls || []).length,
       targetGroups: targetGroups.map(g => g.name || g.id),
       status: 'QUEUED'
     });
@@ -59,6 +93,7 @@ class DispatchQueue {
 
     this.isProcessing = true;
     const current = this.queue.shift();
+    this.currentItem = current;
 
     try {
       current.status = 'PROCESSING';
@@ -128,7 +163,6 @@ class DispatchQueue {
               console.log(`[Fila] ✅ Foto ${photoIndex}/${totalPhotos} enviada ao grupo ${group.name} (${caption.split('\n')[0]})`);
             } catch (errPhoto) {
               console.error(`[Fila] ⚠️ Falha ao baixar/enviar foto ${photoIndex}/${totalPhotos} (${photoUrl}): ${errPhoto.message}. Foto ignorada (não enviada ao WhatsApp).`);
-              // Não envia mensagem de erro para o WhatsApp do grupo do cliente para não poluir
             }
 
             // Intervalo humano e anti-ban entre fotos consecutivas
@@ -146,6 +180,9 @@ class DispatchQueue {
 
       current.status = 'COMPLETED';
       Storage.updateHistoryStatus(current.id, 'COMPLETED');
+      if (current.onComplete) {
+        try { await current.onComplete(); } catch (_) {}
+      }
       console.log(`[Fila] ✅ Atividade #${current.activity.activityId} concluída com sucesso!`);
 
     } catch (err) {
@@ -160,8 +197,12 @@ class DispatchQueue {
       } else {
         current.status = 'FAILED';
         Storage.updateHistoryStatus(current.id, 'FAILED', err.message);
+        if (current.onFail) {
+          try { await current.onFail(err); } catch (_) {}
+        }
       }
     } finally {
+      this.currentItem = null;
       this.isProcessing = false;
       // Processar próximo se houver
       setTimeout(() => this.processNext(), 1000);
@@ -172,11 +213,20 @@ class DispatchQueue {
     return {
       isProcessing: this.isProcessing,
       pendingCount: this.queue.length,
+      currentItem: this.currentItem ? {
+        id: this.currentItem.id,
+        activityId: this.currentItem.activity.activityId,
+        pdv: this.currentItem.activity.pdvName,
+        promoter: this.currentItem.activity.promoterName,
+        photos: (this.currentItem.activity.photoUrls || []).length,
+        status: 'PROCESSING'
+      } : null,
       items: this.queue.map(q => ({
         id: q.id,
         activityId: q.activity.activityId,
         pdv: q.activity.pdvName,
-        photos: q.activity.photoUrls.length,
+        promoter: q.activity.promoterName,
+        photos: (q.activity.photoUrls || []).length,
         status: q.status
       }))
     };

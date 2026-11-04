@@ -499,13 +499,161 @@ async function setAsDefaultGroup(groupId, groupName) {
   }
 }
 
-// 4. Feed de Atividades & Histórico
+// 4. Feed de Atividades & Histórico de 7 Dias com Filtros
+function getBrazilDayKey(dateObj) {
+  try {
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(dateObj);
+    const m = {};
+    for (const p of parts) m[p.type] = p.value;
+    return {
+      key: `${m.year}-${m.month}-${m.day}`,
+      label: `${m.day}/${m.month}/${m.year}`
+    };
+  } catch (_) {
+    const iso = dateObj.toISOString().slice(0, 10);
+    return { key: iso, label: iso.split('-').reverse().join('/') };
+  }
+}
+
+function deriveItemDateKey(item) {
+  if (item.dateKey) return item.dateKey;
+  if (item.date && /^\d{2}\/\d{2}\/\d{4}/.test(item.date)) {
+    const [d, m, y] = item.date.slice(0, 10).split('/');
+    return `${y}-${m}-${d}`;
+  }
+  if (item.timestamp) {
+    return getBrazilDayKey(new Date(item.timestamp)).key;
+  }
+  return '';
+}
+
+function populateFeedFilterOptions(items) {
+  const daySelect = document.getElementById('feed-filter-day');
+  const promoterSelect = document.getElementById('feed-filter-promoter');
+
+  // 1. Popular últimos 7 dias
+  if (daySelect) {
+    const currentDayVal = daySelect.value || 'ALL';
+    const dayCounts = {};
+    for (const item of items) {
+      const k = deriveItemDateKey(item);
+      if (k) dayCounts[k] = (dayCounts[k] || 0) + 1;
+    }
+
+    const last7Days = [];
+    const seenKeys = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const info = getBrazilDayKey(d);
+      if (!seenKeys.has(info.key)) {
+        seenKeys.add(info.key);
+        let prefix = '';
+        if (i === 0) prefix = 'Hoje - ';
+        else if (i === 1) prefix = 'Ontem - ';
+        last7Days.push({
+          key: info.key,
+          text: `${prefix}${info.label} (${dayCounts[info.key] || 0})`
+        });
+      }
+    }
+
+    daySelect.innerHTML = `<option value="ALL">📅 Todos os últimos 7 dias (${items.length})</option>` +
+      last7Days.map(d => `<option value="${d.key}">${d.text}</option>`).join('');
+
+    if ([...daySelect.options].some(o => o.value === currentDayVal)) {
+      daySelect.value = currentDayVal;
+    }
+  }
+
+  // 2. Popular promotores únicos (filtrados pelo dia selecionado, se houver)
+  if (promoterSelect) {
+    const currentPromoterVal = promoterSelect.value || 'ALL';
+    const selectedDay = daySelect ? daySelect.value : 'ALL';
+    const baseForPromoters = selectedDay === 'ALL'
+      ? items
+      : items.filter(i => deriveItemDateKey(i) === selectedDay);
+
+    const promoterMap = new Map();
+    for (const item of baseForPromoters) {
+      const name = (item.promoterName || 'Promotor de Campo').trim();
+      if (!name) continue;
+      promoterMap.set(name, (promoterMap.get(name) || 0) + 1);
+    }
+
+    const sortedPromoters = Array.from(promoterMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+
+    promoterSelect.innerHTML = `<option value="ALL">👤 Todos os Promotores (${sortedPromoters.length})</option>` +
+      sortedPromoters.map(([name, count]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)} (${count})</option>`).join('');
+
+    if ([...promoterSelect.options].some(o => o.value === currentPromoterVal)) {
+      promoterSelect.value = currentPromoterVal;
+    }
+  }
+}
+
+function applyFeedFiltersAndRender() {
+  const allItems = appState.history || [];
+  const dayVal = document.getElementById('feed-filter-day')?.value || 'ALL';
+  const promoterVal = document.getElementById('feed-filter-promoter')?.value || 'ALL';
+  const statusVal = document.getElementById('feed-filter-status')?.value || 'ALL';
+  const searchVal = (document.getElementById('feed-filter-search')?.value || '').trim().toLowerCase();
+
+  // Filtrar primeiro por Dia, Promotor e Busca para calcular os contadores de Enviados vs Pendentes daquele recorte
+  const baseFiltered = allItems.filter(item => {
+    if (dayVal !== 'ALL' && deriveItemDateKey(item) !== dayVal) return false;
+    if (promoterVal !== 'ALL' && (item.promoterName || '').trim() !== promoterVal) return false;
+    if (searchVal) {
+      const hay = `${item.promoterName || ''} ${item.pdvName || ''} ${item.clientName || ''} ${item.networkName || ''} ${item.activityId || ''} ${(item.targetGroups || []).join(' ')}`.toLowerCase();
+      if (!hay.includes(searchVal)) return false;
+    }
+    return true;
+  });
+
+  let sentCount = 0;
+  let pendingCount = 0;
+  let failedCount = 0;
+
+  for (const item of baseFiltered) {
+    if (item.status === 'COMPLETED') sentCount++;
+    else if (item.status === 'QUEUED' || item.status === 'PROCESSING') pendingCount++;
+    else failedCount++;
+  }
+
+  // Filtrar pelo Status selecionado
+  const finalItems = baseFiltered.filter(item => {
+    if (statusVal === 'SENT') return item.status === 'COMPLETED';
+    if (statusVal === 'PENDING') return item.status === 'QUEUED' || item.status === 'PROCESSING';
+    if (statusVal === 'FAILED') return item.status === 'FAILED' || item.status === 'IGNORED_NO_GROUP';
+    return true;
+  });
+
+  // Atualizar contadores no topo do Feed
+  const elTotal = document.getElementById('count-feed-total');
+  const elSent = document.getElementById('count-feed-sent');
+  const elPending = document.getElementById('count-feed-pending');
+  const elFailed = document.getElementById('count-feed-failed');
+
+  if (elTotal) elTotal.textContent = finalItems.length;
+  if (elSent) elSent.textContent = sentCount;
+  if (elPending) elPending.textContent = pendingCount;
+  if (elFailed) elFailed.textContent = failedCount;
+
+  renderActivityFeed(finalItems);
+}
+
 async function loadHistory() {
   try {
-    const res = await fetch('/api/history?limit=30');
+    const res = await fetch('/api/history?limit=1000');
     appState.history = await res.json();
     statActivitiesCount.textContent = appState.history.length;
-    renderActivityFeed(appState.history);
+    populateFeedFilterOptions(appState.history);
+    applyFeedFiltersAndRender();
   } catch (err) {
     console.error('Erro ao carregar histórico:', err);
   }
@@ -515,25 +663,29 @@ function renderActivityFeed(items) {
   if (!items || items.length === 0) {
     activityFeedList.innerHTML = `
       <p style="text-align: center; color: var(--text-muted); padding: 2rem;">
-        Nenhuma atividade recebida até o momento.
+        Nenhuma atividade encontrada para os filtros selecionados.
       </p>
     `;
     return;
   }
 
   activityFeedList.innerHTML = items.map(item => {
-    let statusBadge = '<span class="badge badge-warning">Na Fila</span>';
-    if (item.status === 'COMPLETED') statusBadge = '<span class="badge badge-success">Disparado no WhatsApp</span>';
-    if (item.status === 'PROCESSING') statusBadge = '<span class="badge badge-info">Enviando Fotos...</span>';
-    if (item.status === 'FAILED') statusBadge = '<span class="badge badge-danger">Falha no Envio</span>';
-    if (item.status === 'IGNORED_NO_GROUP') statusBadge = '<span class="badge badge-warning">Sem Grupo Mapeado</span>';
+    let statusBadge = '<span class="badge badge-warning">⏳ Pendente / Na Fila</span>';
+    if (item.status === 'COMPLETED') statusBadge = '<span class="badge badge-success">✅ Enviado no WhatsApp</span>';
+    if (item.status === 'PROCESSING') statusBadge = '<span class="badge badge-info">📤 Enviando Fotos Agora...</span>';
+    if (item.status === 'FAILED') statusBadge = '<span class="badge badge-danger">❌ Falha no Envio</span>';
+    if (item.status === 'IGNORED_NO_GROUP') statusBadge = '<span class="badge badge-warning">⚠️ Sem Grupo Mapeado</span>';
+
+    const clientTag = item.clientName
+      ? `<span class="badge badge-info" style="margin-right: 0.4rem;">🏷️ ${escapeHtml(item.clientName)}</span>`
+      : '';
 
     return `
       <div class="activity-item">
-        <div class="activity-avatar">📸</div>
+        <div class="activity-avatar">${item.status === 'COMPLETED' ? '✅' : item.status === 'PROCESSING' ? '📤' : '📸'}</div>
         <div class="activity-details">
           <div class="activity-header-line">
-            <span class="activity-title-text">${escapeHtml(item.pdvName || 'PDV')} &bull; ${escapeHtml(item.activityName || 'Atividade')}</span>
+            <span class="activity-title-text">${clientTag}${escapeHtml(item.pdvName || 'PDV')} &bull; ${escapeHtml(item.activityName || 'Atividade')}</span>
             ${statusBadge}
           </div>
           <div class="activity-meta">
@@ -550,6 +702,44 @@ function renderActivityFeed(items) {
 }
 
 document.getElementById('btn-refresh-feed')?.addEventListener('click', loadHistory);
+document.getElementById('feed-filter-day')?.addEventListener('change', () => {
+  populateFeedFilterOptions(appState.history || []);
+  applyFeedFiltersAndRender();
+});
+document.getElementById('feed-filter-promoter')?.addEventListener('change', applyFeedFiltersAndRender);
+document.getElementById('feed-filter-status')?.addEventListener('change', applyFeedFiltersAndRender);
+document.getElementById('feed-filter-search')?.addEventListener('input', applyFeedFiltersAndRender);
+
+document.getElementById('btn-clear-feed-filters')?.addEventListener('click', () => {
+  const dayEl = document.getElementById('feed-filter-day');
+  const promEl = document.getElementById('feed-filter-promoter');
+  const statEl = document.getElementById('feed-filter-status');
+  const searchEl = document.getElementById('feed-filter-search');
+  if (dayEl) dayEl.value = 'ALL';
+  if (promEl) promEl.value = 'ALL';
+  if (statEl) statEl.value = 'ALL';
+  if (searchEl) searchEl.value = '';
+  populateFeedFilterOptions(appState.history || []);
+  applyFeedFiltersAndRender();
+});
+
+// Clique rápido nos contadores do topo
+document.getElementById('pill-filter-all')?.addEventListener('click', () => {
+  const statEl = document.getElementById('feed-filter-status');
+  if (statEl) { statEl.value = 'ALL'; applyFeedFiltersAndRender(); }
+});
+document.getElementById('pill-filter-sent')?.addEventListener('click', () => {
+  const statEl = document.getElementById('feed-filter-status');
+  if (statEl) { statEl.value = 'SENT'; applyFeedFiltersAndRender(); }
+});
+document.getElementById('pill-filter-pending')?.addEventListener('click', () => {
+  const statEl = document.getElementById('feed-filter-status');
+  if (statEl) { statEl.value = 'PENDING'; applyFeedFiltersAndRender(); }
+});
+document.getElementById('pill-filter-failed')?.addEventListener('click', () => {
+  const statEl = document.getElementById('feed-filter-status');
+  if (statEl) { statEl.value = 'FAILED'; applyFeedFiltersAndRender(); }
+});
 
 // 5. Simulador
 document.getElementById('form-simulator')?.addEventListener('submit', async (e) => {

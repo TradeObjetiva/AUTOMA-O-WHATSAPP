@@ -12,11 +12,60 @@ if (typeof globalThis.WebSocket === 'undefined') {
   } catch (_) {}
 }
 
+function formatBrazilDateParts(isoString, fallbackDateExec) {
+  let d = isoString ? new Date(isoString) : new Date();
+  if (isNaN(d.getTime())) d = new Date();
+
+  try {
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).formatToParts(d);
+
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+
+    const dateLabel = `${map.day}/${map.month}/${map.year}`;
+    const dateKey = `${map.year}-${map.month}-${map.day}`;
+    const fullDisplay = `${dateLabel}, ${map.hour}:${map.minute}:${map.second}`;
+
+    // Se houver data_execucao da uMov.me legível, podemos usar na exibição mas manter dateKey de São Paulo
+    let display = fullDisplay;
+    if (fallbackDateExec && typeof fallbackDateExec === 'string') {
+      const cleanExec = fallbackDateExec.replace(/^Data:\s*/i, '').trim();
+      const m = cleanExec.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)/);
+      if (m) {
+        display = `${m[3]}/${m[2]}/${m[1]}, ${m[4]}`;
+      } else if (/^\d{2}\/\d{2}\/\d{4}/.test(cleanExec)) {
+        display = cleanExec;
+      }
+    }
+
+    return { dateKey, dateLabel, display, iso: d.toISOString() };
+  } catch (_) {
+    const iso = d.toISOString();
+    return {
+      dateKey: iso.slice(0, 10),
+      dateLabel: iso.slice(0, 10).split('-').reverse().join('/'),
+      display: iso.replace('T', ' ').slice(0, 19),
+      iso
+    };
+  }
+}
+
 class SupabaseWorker {
   constructor() {
     this.client = null;
     this.enabled = false;
     this.pollInterval = null;
+    this.lastError = null;
+    this.processingRowIds = new Set();
   }
 
   getWebhookBaseUrl() {
@@ -93,8 +142,10 @@ class SupabaseWorker {
       // 1. Sincronizar regras do banco de dados com local
       this.syncRulesFromSupabase();
 
-      // 2. Processar atividades pendentes acumuladas
-      this.processPendingActivities();
+      // 2. Recuperar atividades interrompidas (PROCESSANDO -> PENDENTE) e processar fila
+      this.recoverInterruptedActivities().then(() => {
+        this.processPendingActivities();
+      });
 
       // 3. Iniciar polling resiliente a cada 5 segundos
       if (!this.pollInterval) {
@@ -114,6 +165,23 @@ class SupabaseWorker {
     }
   }
 
+  async recoverInterruptedActivities() {
+    if (!this.enabled || !this.client) return;
+    try {
+      const todayStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data } = await this.client
+        .from('atividades_umovme')
+        .update({ status: 'PENDENTE', updated_at: new Date().toISOString() })
+        .eq('status', 'PROCESSANDO')
+        .gte('created_at', todayStart)
+        .select('id, atividade_id');
+
+      if (data && data.length > 0) {
+        console.log(`[Supabase Worker] 🔄 ${data.length} atividade(s) interrompida(s) recuperada(s) para a fila.`);
+      }
+    } catch (_) {}
+  }
+
   async syncRulesFromSupabase() {
     if (!this.enabled) return;
     try {
@@ -123,7 +191,6 @@ class SupabaseWorker {
         .eq('ativo', true);
 
       if (error) {
-        // Tabela ainda não criada
         if (error.code === 'PGRST205') {
           console.warn('[Supabase Worker] ⚠️ Tabela "regras_roteamento" ainda não existe. Execute o script supabase_setup.sql no SQL Editor.');
         }
@@ -181,7 +248,6 @@ class SupabaseWorker {
     }
 
     try {
-      // Buscar atividades com status PENDENTE
       const { data, error } = await this.client
         .from('atividades_umovme')
         .select('*')
@@ -196,18 +262,25 @@ class SupabaseWorker {
           await this.handleActivityRow(row);
         }
       }
-    } catch (err) {
-      // silencia erro de polling
-    }
+    } catch (_) {}
   }
 
   async handleActivityRow(row) {
+    if (!row || !row.id) return;
     if (!this.enabled || !whatsappManager.sock || whatsappManager.status !== 'CONNECTED') {
       console.warn(`[Supabase Worker] WhatsApp não conectado. Atividade #${row?.atividade_id} permanece na fila.`);
       return;
     }
+
+    // Evitar processamento duplicado simultâneo entre Realtime e Polling
+    if (this.processingRowIds.has(row.id) || this.processingRowIds.has(row.atividade_id)) {
+      return;
+    }
+    this.processingRowIds.add(row.id);
+    if (row.atividade_id) this.processingRowIds.add(row.atividade_id);
+
     try {
-      // Marcar como PROCESSANDO no Supabase para evitar envio duplo
+      // Marcar como PROCESSANDO no Supabase enquanto estiver na fila de envio
       await this.client
         .from('atividades_umovme')
         .update({ status: 'PROCESSANDO', updated_at: new Date().toISOString() })
@@ -220,6 +293,8 @@ class SupabaseWorker {
           .from('atividades_umovme')
           .update({ status: 'SEM_GRUPO', erro: 'Nenhum grupo mapeado para este Cliente/Rede', updated_at: new Date().toISOString() })
           .eq('id', row.id);
+        this.processingRowIds.delete(row.id);
+        if (row.atividade_id) this.processingRowIds.delete(row.atividade_id);
         return;
       }
 
@@ -264,7 +339,7 @@ class SupabaseWorker {
         activity.date = row.data_execucao;
       }
 
-      // 5. Garantir que se houver Foto do Mix em qualquer campo (clientId, observacoes, raw_payload), ela seja inserida no texto
+      // 5. Garantir Foto do Mix no texto
       if (!activity.fotoDoMix) {
         const searchMix = JSON.stringify(rawRoot) + ' ' + (row.observacoes || '');
         const mixMatch = searchMix.match(/Foto\s+do\s+Mix:\s*(https?:\/\/[^\s;"'<>]+)/i);
@@ -273,7 +348,7 @@ class SupabaseWorker {
         }
       }
 
-      // 6. Excluir a Foto do Mix da fila de fotos para não duplicar como arquivo de imagem (ela vai no texto)
+      // 6. Excluir a Foto do Mix da fila de fotos para não duplicar como arquivo de imagem
       if (activity.fotoDoMix && Array.isArray(activity.photoUrls)) {
         activity.photoUrls = activity.photoUrls.filter(p => {
           const u = typeof p === 'object' ? p.url : p;
@@ -281,7 +356,7 @@ class SupabaseWorker {
         });
       }
 
-      // 7. Descartar fotos de placeholder do uMov.me (MEDIA COMING SOON / nomedia.png)
+      // 7. Descartar placeholders nomedia.png / logo
       if (Array.isArray(activity.photoUrls)) {
         activity.photoUrls = activity.photoUrls.filter(p => {
           const u = typeof p === 'object' ? p.url : p;
@@ -289,24 +364,134 @@ class SupabaseWorker {
         });
       }
 
-      console.log(`[Supabase Worker] 🚀 Despachando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName} | ${activity.photoUrls.length} fotos + Mix no texto: ${Boolean(activity.fotoDoMix)}) para o WhatsApp...`);
+      console.log(`[Supabase Worker] 🚀 Enfileirando atividade #${activity.activityId} (${activity.clientName} | Loja: ${activity.pdvName} | ${activity.photoUrls.length} fotos) para o WhatsApp...`);
 
-      // Enfileirar na fila anti-ban do WhatsApp
-      dispatchQueue.enqueueActivity(activity, targetGroups);
+      // Enfileirar na fila anti-ban do WhatsApp e só marcar como ENVIADO quando o disparo terminar de fato!
+      dispatchQueue.enqueueActivity(activity, targetGroups, {
+        onComplete: async () => {
+          try {
+            await this.client
+              .from('atividades_umovme')
+              .update({ status: 'ENVIADO', erro: null, updated_at: new Date().toISOString() })
+              .eq('id', row.id);
+            console.log(`[Supabase Worker] ✅ Atividade #${row.atividade_id} finalizada e marcada como ENVIADO no Supabase.`);
+          } finally {
+            this.processingRowIds.delete(row.id);
+            if (row.atividade_id) this.processingRowIds.delete(row.atividade_id);
+          }
+        },
+        onFail: async (err) => {
+          try {
+            await this.client
+              .from('atividades_umovme')
+              .update({ status: 'ERRO', erro: err?.message || 'Falha no envio WhatsApp', updated_at: new Date().toISOString() })
+              .eq('id', row.id);
+          } finally {
+            this.processingRowIds.delete(row.id);
+            if (row.atividade_id) this.processingRowIds.delete(row.atividade_id);
+          }
+        }
+      });
 
-      // Atualizar status para ENVIADO
-      await this.client
-        .from('atividades_umovme')
-        .update({ status: 'ENVIADO', updated_at: new Date().toISOString() })
-        .eq('id', row.id);
-
-      console.log(`[Supabase Worker] ✅ Atividade #${row.atividade_id} marcada como ENVIADO no Supabase.`);
     } catch (err) {
+      this.processingRowIds.delete(row.id);
+      if (row.atividade_id) this.processingRowIds.delete(row.atividade_id);
       console.error(`[Supabase Worker] Erro ao despachar linha #${row.id}:`, err.message);
       await this.client
         .from('atividades_umovme')
         .update({ status: 'ERRO', erro: err.message, updated_at: new Date().toISOString() })
         .eq('id', row.id);
+    }
+  }
+
+  /**
+   * Busca histórico completo dos últimos 7 dias direto do Supabase (persistente 24/7)
+   */
+  async getHistoryLast7Days() {
+    if (!this.enabled || !this.client) {
+      this.init();
+    }
+    if (!this.enabled || !this.client) {
+      return Storage.getHistory(500);
+    }
+
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data, error } = await this.client
+        .from('atividades_umovme')
+        .select('id, atividade_id, cliente, rede, pdv_nome, promotor_nome, tipo_atividade, data_execucao, fotos, grupos_destino, status, erro, created_at, updated_at')
+        .neq('status', 'CANCELADO')
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(1000);
+
+      if (error || !data) {
+        console.error('[Supabase Worker] Erro ao buscar histórico de 7 dias:', error?.message);
+        return Storage.getHistory(500);
+      }
+
+      const activeQueueMap = dispatchQueue.getActiveActivityMap();
+      const seenActivityIds = new Set();
+      const normalized = [];
+
+      for (const row of data) {
+        const actId = row.atividade_id || row.id;
+        // Evitar exibir linhas duplicadas da mesma atividade_id
+        if (seenActivityIds.has(actId)) continue;
+        seenActivityIds.add(actId);
+
+        // Contar fotos válidas
+        const rawPhotos = Array.isArray(row.fotos) ? row.fotos : [];
+        const validPhotos = rawPhotos.filter(p => {
+          const u = typeof p === 'object' ? (p.url || '') : String(p || '');
+          return u.startsWith('http') && !u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/');
+        });
+
+        // Determinar status real sincronizado com a fila em memória
+        let finalStatus = 'QUEUED';
+        if (activeQueueMap[actId] === 'PROCESSING') {
+          finalStatus = 'PROCESSING';
+        } else if (activeQueueMap[actId] === 'QUEUED') {
+          finalStatus = 'QUEUED';
+        } else if (row.status === 'ENVIADO') {
+          finalStatus = 'COMPLETED';
+        } else if (row.status === 'PENDENTE' || row.status === 'PROCESSANDO') {
+          finalStatus = 'QUEUED';
+        } else if (row.status === 'ERRO') {
+          finalStatus = 'FAILED';
+        } else if (row.status === 'SEM_GRUPO') {
+          finalStatus = 'IGNORED_NO_GROUP';
+        }
+
+        const dateParts = formatBrazilDateParts(row.created_at, row.data_execucao);
+        const groups = Array.isArray(row.grupos_destino)
+          ? row.grupos_destino.map(g => (typeof g === 'object' ? (g.name || g.id) : String(g)))
+          : [];
+
+        normalized.push({
+          id: row.id,
+          activityId: actId,
+          clientName: (row.cliente || '').trim(),
+          networkName: (row.rede || '').trim(),
+          pdvName: (row.pdv_nome || 'Loja em Campo').trim(),
+          promoterName: (row.promotor_nome || 'Promotor de Campo').trim(),
+          activityName: (row.tipo_atividade || 'Execução e Reposição em Loja').trim(),
+          date: dateParts.display,
+          dateKey: dateParts.dateKey,
+          dateLabel: dateParts.dateLabel,
+          timestamp: row.created_at,
+          updatedAt: row.updated_at,
+          photoCount: validPhotos.length,
+          targetGroups: groups.length > 0 ? groups : ['Sem grupo mapeado'],
+          status: finalStatus,
+          error: row.erro || null
+        });
+      }
+
+      return normalized;
+    } catch (err) {
+      console.error('[Supabase Worker] Exceção ao carregar histórico 7 dias:', err.message);
+      return Storage.getHistory(500);
     }
   }
 }
