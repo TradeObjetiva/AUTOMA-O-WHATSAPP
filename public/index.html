@@ -9,151 +9,100 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
-  <!-- TELA DE LOGIN & ESCOLHA DE CONTA GOOGLE (ESTILO CANVA / GOOGLE ACCOUNT CHOOSER) -->
-  <div id="auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at top, #182238 0%, #090d16 100%); display: flex; align-items: center; justify-content: center; padding: 1.2rem;">
-    <div style="width: 100%; max-width: 420px; background: #18191b; border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 2.1rem 1.9rem; box-shadow: 0 28px 70px rgba(0,0,0,0.75); color: #f3f4f6;">
+  <!-- AMBIENTE DE LOGIN E SENHA INTERATIVO (CONECTADO AO SUPABASE) -->
+  <div id="auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at top, #152238 0%, #070b14 100%); display: flex; align-items: center; justify-content: center; padding: 1.2rem;">
+    <div style="width: 100%; max-width: 430px; background: rgba(17, 24, 39, 0.96); border: 1px solid var(--border-color); border-radius: 20px; padding: 2rem; box-shadow: 0 28px 65px rgba(0,0,0,0.75);">
 
-      <!-- Mensagem de erro / sucesso global do modal -->
-      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1.1rem; line-height: 1.4;"></div>
+      <!-- Cabeçalho do Login -->
+      <div style="text-align: center; margin-bottom: 1.35rem;">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background: rgba(37, 211, 102, 0.14); border: 1px solid rgba(37, 211, 102, 0.45); display: inline-flex; align-items: center; justify-content: center; font-size: 1.85rem; margin-bottom: 0.65rem; box-shadow: 0 0 25px rgba(37, 211, 102, 0.2);">⚡</div>
+        <h2 style="font-size: 1.4rem; font-weight: 700; color: var(--text-main);">Trade Marketing Hub</h2>
+        <p style="font-size: 0.84rem; color: var(--text-muted); margin-top: 0.25rem;">Objetiva Marketing • Painel de Controle 24h</p>
 
-      <!-- ETAPA 1: TELA INICIAL ("Faça login ou registre-se em segundos" - Igual Imagem 1) -->
-      <div id="auth-step-welcome">
-        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem;">
-          <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(37, 211, 102, 0.15); border: 1px solid rgba(37, 211, 102, 0.4); display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem;">⚡</div>
-          <span style="font-size: 0.9rem; font-weight: 700; color: #25d366; letter-spacing: 0.02em;">Trade Marketing Hub</span>
-        </div>
-
-        <h2 style="font-size: 1.6rem; font-weight: 700; color: #ffffff; line-height: 1.25; margin-bottom: 0.65rem;">
-          Faça login ou registre-se em segundos
-        </h2>
-        <p style="font-size: 0.9rem; color: #9ca3af; line-height: 1.45; margin-bottom: 1.6rem;">
-          Use sua Conta Google ou seu e-mail corporativo para entrar no painel da Objetiva Marketing.
-        </p>
-
-        <div style="display: flex; flex-direction: column; gap: 0.8rem;">
-          <!-- Botão Continuar com o Google -->
-          <button type="button" id="btn-continue-google" style="width: 100%; display: flex; align-items: center; justify-content: center; position: relative; padding: 0.88rem 1.1rem; background: #202124; hover: #2a2b2f; color: #ffffff; border: 1px solid rgba(255,255,255,0.22); border-radius: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.18s ease;">
-            <svg style="position: absolute; left: 1.1rem; width: 20px; height: 20px;" viewBox="0 0 24 24">
-              <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"/>
-              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"/>
-              <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"/>
-              <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"/>
-            </svg>
-            <span>Continuar com o Google</span>
-          </button>
-
-          <!-- Botão Continuar com e-mail -->
-          <button type="button" id="btn-continue-email" style="width: 100%; display: flex; align-items: center; justify-content: center; position: relative; padding: 0.88rem 1.1rem; background: #202124; color: #ffffff; border: 1px solid rgba(255,255,255,0.22); border-radius: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.18s ease;">
-            <svg style="position: absolute; left: 1.1rem; width: 20px; height: 20px; stroke: #e5e7eb;" fill="none" viewBox="0 0 24 24" stroke-width="1.8">
-              <rect x="3" y="5" width="18" height="14" rx="2" />
-              <path d="M3 7l9 6 9-6" />
-            </svg>
-            <span>Continuar com e-mail</span>
-          </button>
-        </div>
-
-        <!-- Container oculto caso queira renderizar botão GSI nativo extra -->
-        <div id="google-oauth-container" style="display: none; margin-top: 1rem; text-align: center;">
-          <div id="google-signin-btn" style="display: flex; justify-content: center;"></div>
+        <!-- Badge interativo de conexão com o Supabase -->
+        <div id="auth-supabase-badge" style="display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 0.65rem; padding: 0.3rem 0.75rem; border-radius: 999px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.35); font-size: 0.75rem; color: #4ade80;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80; display: inline-block;"></span>
+          <span id="auth-supabase-status-text">Supabase Conectado</span>
         </div>
       </div>
 
-      <!-- ETAPA 2: JANELA "FAZER LOGIN COM O GOOGLE - ESCOLHA UMA CONTA" (Igual Imagem 2) -->
-      <div id="auth-step-google-chooser" style="display: none;">
-        <!-- Topo estilo barra Fazer Login com o Google -->
-        <div style="display: flex; align-items: center; gap: 0.65rem; padding-bottom: 0.9rem; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.12);">
-          <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
-            <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"/>
-            <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"/>
-            <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"/>
-            <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"/>
-          </svg>
-          <span style="font-size: 0.88rem; color: #e5e7eb; font-weight: 500;">Fazer Login com o Google</span>
-        </div>
-
-        <h3 style="font-size: 1.55rem; font-weight: 500; color: #ffffff; margin-bottom: 0.35rem;">Escolha uma conta</h3>
-        <p style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 1.35rem;">
-          Prosseguir para <span style="color: #60a5fa; font-weight: 600;">Trade Marketing Hub</span>
-        </p>
-
-        <!-- Lista dinâmica de Contas Google (Fabiano Pereira, Objetiva Marketing, etc.) -->
-        <div id="google-chooser-accounts-list" style="display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.1);"></div>
-
-        <!-- Usar outra conta -->
-        <button type="button" id="btn-google-use-another" style="width: 100%; display: flex; align-items: center; gap: 0.9rem; padding: 0.95rem 0.6rem; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.12); color: #e5e7eb; font-size: 0.9rem; font-weight: 500; cursor: pointer; text-align: left;">
-          <div style="width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; font-size: 1rem;">👤</div>
-          <span>Usar outra conta</span>
+      <!-- Botões Interativos de Alternância: Entrar / Novo Usuário -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; background: rgba(0,0,0,0.4); padding: 0.38rem; border-radius: 12px; margin-bottom: 1.25rem; border: 1px solid rgba(255,255,255,0.06);">
+        <button type="button" id="btn-auth-mode-login" class="btn btn-primary btn-sm" style="justify-content: center; padding: 0.6rem; border-radius: 9px; transition: all 0.2s;">
+          🔑 Fazer Login
         </button>
-
-        <div style="margin-top: 1.3rem; display: flex; justify-content: space-between; align-items: center;">
-          <button type="button" id="btn-back-from-chooser" style="background: transparent; border: none; color: #9ca3af; font-size: 0.83rem; cursor: pointer;">‹ Voltar</button>
-          <span style="font-size: 0.75rem; color: #6b7280;">Português (Brasil)</span>
-        </div>
-      </div>
-
-      <!-- ETAPA 3: FORMULÁRIO DE LOGIN / SENHA DA CONTA ESCOLHIDA -->
-      <div id="auth-step-email-form" style="display: none;">
-        <button type="button" id="btn-back-to-welcome" style="background: transparent; border: none; color: #9ca3af; font-size: 0.88rem; cursor: pointer; margin-bottom: 0.9rem; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0;">
-          ‹ Voltar
+        <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="justify-content: center; padding: 0.6rem; border-radius: 9px; transition: all 0.2s;">
+          ➕ Novo Usuário
         </button>
-
-        <!-- Chip da conta selecionada (aparece quando clicou na conta na lista do Google) -->
-        <div id="selected-google-account-pill" style="display: none; align-items: center; gap: 0.7rem; padding: 0.55rem 0.85rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; margin-bottom: 1.15rem;">
-          <div id="selected-account-avatar" style="width: 28px; height: 28px; border-radius: 50%; background: #7e22ce; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.82rem;">F</div>
-          <div style="flex: 1; overflow: hidden;">
-            <div id="selected-account-name" style="font-size: 0.82rem; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-            <div id="selected-account-email" style="font-size: 0.74rem; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          </div>
-          <button type="button" id="btn-change-account" style="background: transparent; border: none; color: #60a5fa; font-size: 0.75rem; cursor: pointer;">Trocar</button>
-        </div>
-
-        <!-- Abas Entrar / Criar Conta -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; background: rgba(0,0,0,0.4); padding: 0.35rem; border-radius: 10px; margin-bottom: 1.2rem;">
-          <button type="button" id="btn-auth-mode-login" class="btn btn-primary btn-sm" style="justify-content: center;">🔑 Entrar</button>
-          <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="justify-content: center;">✨ Criar Conta</button>
-        </div>
-
-        <!-- Formulário Entrar -->
-        <form id="form-auth-login">
-          <div class="form-group" id="login-email-group" style="margin-bottom: 0.9rem;">
-            <label>📧 E-mail da Conta Google</label>
-            <input type="email" id="login-email" class="form-input" placeholder="inteligencia.trade@objetivamkt.com.br" required>
-          </div>
-          <div class="form-group" style="margin-bottom: 1.2rem;">
-            <label>🔒 Digite sua senha</label>
-            <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha de acesso" required>
-          </div>
-          <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.8rem;">
-            🚀 Prosseguir para o Painel
-          </button>
-        </form>
-
-        <!-- Formulário Criar Conta Google / Primeiro Acesso -->
-        <form id="form-auth-register" style="display: none;">
-          <div class="form-group" style="margin-bottom: 0.85rem;">
-            <label>👤 Seu Nome Completo</label>
-            <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano Pereira" required>
-          </div>
-          <div class="form-group" style="margin-bottom: 0.85rem;">
-            <label>📧 Seu E-mail Google</label>
-            <input type="email" id="register-email" class="form-input" placeholder="seu.email@objetivamkt.com.br" required>
-          </div>
-          <div class="form-group" style="margin-bottom: 1.2rem;">
-            <label>🔑 Definir Senha (mín. 6 caracteres)</label>
-            <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha segura" minlength="6" required>
-          </div>
-          <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.8rem;">
-            ✨ Cadastrar Conta Google
-          </button>
-          <p style="font-size: 0.75rem; color: #9ca3af; text-align: center; margin-top: 0.75rem;">
-            Novas contas passam pela aprovação do administrador.
-          </p>
-        </form>
       </div>
+
+      <!-- Alerta de Erro / Sucesso -->
+      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1rem; line-height: 1.4;"></div>
+
+      <!-- FORMULÁRIO 1: LOGIN E SENHA -->
+      <form id="form-auth-login">
+        <!-- Botões rápidos interativos para preencher o usuário em 1 clique -->
+        <div style="margin-bottom: 0.95rem;">
+          <span style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem;">Acesso rápido (clique para preencher o usuário):</span>
+          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="quickFillLogin('admin')" style="font-size: 0.76rem; padding: 0.35rem 0.65rem; border-radius: 8px;">
+              👤 admin (Fabiano)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="quickFillLogin('inteligencia.trade@objetivamkt.com.br')" style="font-size: 0.76rem; padding: 0.35rem 0.65rem; border-radius: 8px;">
+              📧 inteligencia.trade
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="quickFillLogin('objetiva')" style="font-size: 0.76rem; padding: 0.35rem 0.65rem; border-radius: 8px;">
+              🏢 objetiva
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.95rem;">
+          <label>👤 Usuário ou E-mail</label>
+          <input type="text" id="login-email" class="form-input" placeholder="Digite admin ou seu e-mail" autocomplete="username" required>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label>🔒 Senha de Acesso</label>
+          <div style="position: relative; display: flex; align-items: center;">
+            <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha" autocomplete="current-password" style="padding-right: 2.8rem;" required>
+            <button type="button" id="btn-toggle-login-pass" title="Mostrar/Ocultar Senha" style="position: absolute; right: 0.6rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: var(--text-main); border-radius: 7px; padding: 0.28rem 0.5rem; font-size: 0.85rem; cursor: pointer;">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.82rem; font-size: 0.95rem; border-radius: 11px; box-shadow: 0 8px 20px rgba(37, 211, 102, 0.25);">
+          🚀 Entrar no Sistema
+        </button>
+      </form>
+
+      <!-- FORMULÁRIO 2: CRIAR NOVO USUÁRIO -->
+      <form id="form-auth-register" style="display: none;">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label>👤 Nome Completo</label>
+          <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano Pereira" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label>🆔 Usuário de Login (ou E-mail)</label>
+          <input type="text" id="register-email" class="form-input" placeholder="Ex: fabiano ou email@objetivamkt.com.br" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 1.2rem;">
+          <label>🔑 Definir Senha</label>
+          <div style="position: relative; display: flex; align-items: center;">
+            <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha (mín. 4 caracteres)" minlength="4" style="padding-right: 2.8rem;" required>
+            <button type="button" id="btn-toggle-register-pass" title="Mostrar/Ocultar Senha" style="position: absolute; right: 0.6rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: var(--text-main); border-radius: 7px; padding: 0.28rem 0.5rem; font-size: 0.85rem; cursor: pointer;">
+              👁️
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.82rem; font-size: 0.95rem; border-radius: 11px;">
+          ✨ Criar Usuário e Entrar
+        </button>
+      </form>
 
     </div>
   </div>
@@ -459,43 +408,63 @@
       </div>
     </div>
 
-    <!-- 4.5. TAB: USUÁRIOS & ACESSOS GOOGLE -->
+    <!-- 4.5. TAB: USUÁRIOS & ACESSOS (SUPABASE) -->
     <div id="tab-users" class="tab-pane">
       <div class="card">
         <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
           <div>
-            <h2 class="card-title">🔐 Controle de Usuários & Contas Google Autorizadas</h2>
-            <p class="card-subtitle">Administrador Principal: <strong>inteligencia.trade@objetivamkt.com.br</strong> • Aprove novos cadastros ou libere e-mails Google da equipe</p>
+            <h2 class="card-title">🔐 Controle de Usuários & Senhas (Supabase)</h2>
+            <p class="card-subtitle">Gerencie logins, senhas e níveis de permissão sincronizados diretamente com o Supabase</p>
+          </div>
+          <div id="users-supabase-table-badge" class="badge badge-info" style="font-size: 0.8rem; padding: 0.45rem 0.85rem;">
+            Verificando tabela public.usuarios...
           </div>
         </div>
 
-        <!-- Formulário Liberar / Cadastrar Usuário -->
+        <!-- Painel de Status & Criação da Tabela public.usuarios no Supabase -->
+        <div id="supabase-sql-helper-box" style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 12px; padding: 1.15rem; margin-bottom: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+            <div>
+              <h4 id="supabase-sql-title" style="color: #38bdf8; font-size: 0.95rem; margin-bottom: 0.25rem;">🗄️ Tabela <code>public.usuarios</code> no Supabase</h4>
+              <p id="supabase-sql-desc" style="font-size: 0.82rem; color: var(--text-muted);">
+                Para criar ou atualizar a tabela dedicada <code>usuarios</code> lá no seu painel do Supabase, copie o comando SQL abaixo e cole no <strong>SQL Editor</strong> do Supabase.
+              </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button type="button" id="btn-copy-usuarios-sql" class="btn btn-primary btn-sm">📋 Copiar SQL da Tabela</button>
+              <button type="button" id="btn-toggle-usuarios-sql" class="btn btn-secondary btn-sm">👁️ Ver SQL</button>
+            </div>
+          </div>
+          <pre id="usuarios-sql-preview" style="display: none; margin-top: 0.9rem; background: #090d16; padding: 0.9rem; border-radius: 8px; border: 1px solid var(--border-color); font-size: 0.78rem; color: #a7f3d0; overflow-x: auto; white-space: pre-wrap;"></pre>
+        </div>
+
+        <!-- Formulário Cadastrar / Alterar Senha de Usuário -->
         <div style="background: rgba(11, 15, 25, 0.7); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 1.5rem;">
-          <h3 style="font-size: 0.95rem; margin-bottom: 0.85rem; color: var(--accent-wa);">➕ Autorizar ou Atualizar Conta Google da Equipe</h3>
+          <h3 style="font-size: 0.95rem; margin-bottom: 0.85rem; color: var(--accent-wa);">➕ Cadastrar Novo Usuário ou Alterar Senha</h3>
           <form id="form-manage-user">
-            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));">
               <div class="form-group">
-                <label>📧 E-mail Google / Corporativo</label>
-                <input type="email" id="user-form-email" class="form-input" placeholder="colaborador@objetivamkt.com.br" required>
+                <label>🆔 Usuário / Login ou E-mail</label>
+                <input type="text" id="user-form-email" class="form-input" placeholder="Ex: admin ou email@empresa.com" required>
               </div>
               <div class="form-group">
-                <label>👤 Nome do Usuário</label>
+                <label>👤 Nome de Exibição</label>
                 <input type="text" id="user-form-name" class="form-input" placeholder="Nome da pessoa">
               </div>
               <div class="form-group">
-                <label>🛡️ Nível de Permissão</label>
+                <label>🛡️ Nível de Acesso</label>
                 <select id="user-form-role" class="form-input">
                   <option value="operador">Operador (Equipe)</option>
                   <option value="admin">Administrador</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>🔑 Senha Inicial / Nova Senha (Opcional)</label>
-                <input type="password" id="user-form-password" class="form-input" placeholder="Deixe vazio para a pessoa criar">
+                <label>🔑 Senha de Acesso</label>
+                <input type="text" id="user-form-password" class="form-input" placeholder="Digite a senha do usuário">
               </div>
             </div>
             <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem;">
-              <button type="submit" class="btn btn-primary btn-sm">💾 Salvar / Autorizar Conta</button>
+              <button type="submit" class="btn btn-primary btn-sm">💾 Salvar Usuário no Supabase</button>
             </div>
           </form>
         </div>
@@ -505,29 +474,21 @@
           <table>
             <thead>
               <tr>
-                <th>Usuário</th>
-                <th>E-mail Google</th>
+                <th>Nome</th>
+                <th>Usuário / Login</th>
+                <th>E-mail</th>
                 <th>Permissão</th>
-                <th>Status de Acesso</th>
+                <th>Status</th>
                 <th>Último Login</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody id="users-table-body">
               <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando lista de usuários...</td>
+                <td colspan="7" style="text-align: center; color: var(--text-muted);">Carregando lista de usuários...</td>
               </tr>
             </tbody>
           </table>
-        </div>
-
-        <!-- Opcional: Google OAuth Client ID -->
-        <div style="margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border-color);">
-          <h4 style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.5rem;">⚙️ Integração Botão "Entrar em 1 Clique com Google" (Opcional - Google OAuth Client ID)</h4>
-          <div style="display: flex; gap: 0.7rem; flex-wrap: wrap;">
-            <input type="text" id="setting-google-client-id" class="form-input" style="flex: 1; min-width: 260px;" placeholder="Ex: 123456789-abc.apps.googleusercontent.com (Opcional)">
-            <button type="button" id="btn-save-google-client" class="btn btn-secondary btn-sm">Salvar Client ID</button>
-          </div>
         </div>
       </div>
     </div>

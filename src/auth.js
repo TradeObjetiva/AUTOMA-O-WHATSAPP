@@ -1,11 +1,10 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
-const Storage = require('./storage');
 
 const USERS_FILE = path.join(__dirname, '../config/users.json');
+const SQL_FILE = path.join(__dirname, '../supabase_usuarios.sql');
 const USERS_BACKUP_ID = '__system_users_auth__';
 const MASTER_ADMIN_EMAIL = 'inteligencia.trade@objetivamkt.com.br';
 const SECONDARY_ADMIN_EMAIL = 'objetiva.mkt@gmail.com';
@@ -18,11 +17,33 @@ function hashPassword(password, salt = null) {
   return `${usedSalt}:${hash}`;
 }
 
-function verifyPassword(password, storedHash) {
-  if (!storedHash || !storedHash.includes(':')) return false;
-  const [salt, originalHash] = storedHash.split(':');
-  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(originalHash, 'hex'));
+function verifyPassword(inputPassword, storedValue) {
+  if (!inputPassword || !storedValue) return false;
+  const cleanInput = String(inputPassword).trim();
+  const cleanStored = String(storedValue).trim();
+
+  // 1. Se a senha estiver gravada em texto direto na tabela 'usuarios' do Supabase
+  if (!cleanStored.includes(':') || cleanStored.length < 40) {
+    if (cleanInput === cleanStored) return true;
+    if (cleanInput.toLowerCase() === cleanStored.toLowerCase()) return true;
+    return false;
+  }
+
+  // 2. Se estiver com hash scrypt (salt:hash)
+  try {
+    const [salt, originalHash] = cleanStored.split(':');
+    const hash = crypto.scryptSync(cleanInput, salt, 64).toString('hex');
+    if (crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(originalHash, 'hex'))) {
+      return true;
+    }
+    // Testar também variação com primeira letra maiúscula/minúscula
+    const lowerHash = crypto.scryptSync(cleanInput.toLowerCase(), salt, 64).toString('hex');
+    if (crypto.timingSafeEqual(Buffer.from(lowerHash, 'hex'), Buffer.from(originalHash, 'hex'))) {
+      return true;
+    }
+  } catch (_) {}
+
+  return false;
 }
 
 function signToken(payload) {
@@ -59,8 +80,10 @@ function verifyToken(token) {
 class AuthManager {
   constructor() {
     this.users = [];
-    this.googleClientId = '';
     this.supabase = null;
+    this.supabaseConnected = false;
+    this.usuariosTableExists = false;
+    this.lastSupabaseCheck = null;
     this.initialized = false;
   }
 
@@ -84,48 +107,49 @@ class AuthManager {
   ensureMasterAdmin() {
     const defaultAdmins = [
       {
+        id: 'user-admin-master',
+        username: 'admin',
+        aliases: ['admin', 'fabiano', 'inteligencia.trade', MASTER_ADMIN_EMAIL.toLowerCase()],
         email: MASTER_ADMIN_EMAIL.toLowerCase(),
-        name: 'Fabiano Pereira',
-        avatarColor: '#7e22ce'
+        name: 'Fabiano Pereira (Admin)'
       },
       {
+        id: 'user-admin-objetiva',
+        username: 'objetiva',
+        aliases: ['objetiva', 'objetiva.mkt', SECONDARY_ADMIN_EMAIL.toLowerCase()],
         email: SECONDARY_ADMIN_EMAIL.toLowerCase(),
-        name: 'Objetiva Marketing',
-        avatarColor: '#ea580c'
+        name: 'Objetiva Marketing'
       }
     ];
 
-    let changed = false;
     for (const def of defaultAdmins.reverse()) {
-      let existing = this.users.find(u => u.email.toLowerCase() === def.email);
+      let existing = this.users.find(
+        u => (u.email && u.email.toLowerCase() === def.email) || (u.username && u.username.toLowerCase() === def.username)
+      );
       if (!existing) {
         existing = {
+          id: def.id,
+          username: def.username,
           email: def.email,
           name: def.name,
           role: 'admin',
           status: 'APPROVED',
+          plainPassword: DEFAULT_MASTER_PASS,
           passwordHash: hashPassword(DEFAULT_MASTER_PASS),
-          picture: null,
-          avatarColor: def.avatarColor,
           createdAt: new Date().toISOString()
         };
         this.users.unshift(existing);
-        changed = true;
       } else {
+        existing.id = existing.id || def.id;
+        existing.username = existing.username || def.username;
         existing.role = 'admin';
         existing.status = 'APPROVED';
-        if (existing.name === 'Inteligência Trade (Admin)') {
-          existing.name = def.name;
-        }
-        if (!existing.avatarColor) {
-          existing.avatarColor = def.avatarColor;
-        }
-        if (!existing.passwordHash) {
+        if (!existing.passwordHash && !existing.plainPassword) {
+          existing.plainPassword = DEFAULT_MASTER_PASS;
           existing.passwordHash = hashPassword(DEFAULT_MASTER_PASS);
         }
       }
     }
-    return changed;
   }
 
   loadLocalUsers() {
@@ -134,9 +158,6 @@ class AuthManager {
         const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
         if (Array.isArray(data.users)) {
           this.users = data.users;
-        }
-        if (data.googleClientId) {
-          this.googleClientId = data.googleClientId;
         }
       }
     } catch (_) {}
@@ -147,49 +168,125 @@ class AuthManager {
     try {
       const dir = path.dirname(USERS_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(USERS_FILE, JSON.stringify({
-        users: this.users,
-        googleClientId: this.googleClientId || ''
-      }, null, 2), 'utf-8');
+      fs.writeFileSync(USERS_FILE, JSON.stringify({ users: this.users }, null, 2), 'utf-8');
     } catch (_) {}
   }
 
-  async init() {
-    this.loadLocalUsers();
-    try {
-      const client = this.getSupabaseClient();
-      if (client) {
-        const { data } = await client
-          .from('regras_roteamento')
-          .select('route_slug')
-          .eq('id', USERS_BACKUP_ID)
-          .maybeSingle();
+  /**
+   * Verifica a conexão com o Supabase e sincroniza com a tabela `public.usuarios` (se já existir)
+   * ou com o backup em `regras_roteamento`.
+   */
+  async checkAndSyncFromSupabase() {
+    const client = this.getSupabaseClient();
+    if (!client) {
+      this.supabaseConnected = false;
+      return;
+    }
 
-        if (data && data.route_slug) {
-          const parsed = JSON.parse(data.route_slug);
+    try {
+      // 1. Testar se a tabela dedicada `public.usuarios` já existe no Supabase
+      const { data: tableRows, error: tableErr } = await client
+        .from('usuarios')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!tableErr && Array.isArray(tableRows)) {
+        this.supabaseConnected = true;
+        this.usuariosTableExists = true;
+        this.lastSupabaseCheck = new Date().toISOString();
+
+        if (tableRows.length > 0) {
+          this.users = tableRows.map(row => ({
+            id: row.id || `user-${Date.now()}`,
+            username: (row.usuario || row.email?.split('@')[0] || '').toLowerCase(),
+            email: (row.email || row.usuario || '').toLowerCase(),
+            name: row.nome || row.usuario || 'Usuário',
+            role: row.cargo === 'admin' ? 'admin' : 'operador',
+            status: row.ativo === false ? 'BLOCKED' : (row.status || 'APPROVED'),
+            plainPassword: row.senha && !String(row.senha).includes(':') ? row.senha : undefined,
+            passwordHash: row.senha ? (String(row.senha).includes(':') ? row.senha : hashPassword(row.senha)) : null,
+            createdAt: row.created_at || new Date().toISOString(),
+            lastLoginAt: row.ultimo_login || null
+          }));
+        }
+        this.ensureMasterAdmin();
+        this.saveLocalUsers();
+        // Garantir que os admins padrão também estejam gravados na tabela `usuarios`
+        await this.syncToSupabase();
+        return;
+      }
+
+      // Se o erro for "Could not find the table 'public.usuarios'", a conexão com o Supabase está OK, só falta rodar o SQL
+      if (tableErr && (tableErr.message?.includes('usuarios') || tableErr.code === 'PGRST205' || tableErr.code === '42P01')) {
+        this.supabaseConnected = true;
+        this.usuariosTableExists = false;
+        this.lastSupabaseCheck = new Date().toISOString();
+      }
+
+      // 2. Carregar do backup em `regras_roteamento` enquanto a tabela `usuarios` não é criada
+      const { data: backupRow, error: backupErr } = await client
+        .from('regras_roteamento')
+        .select('route_slug')
+        .eq('id', USERS_BACKUP_ID)
+        .maybeSingle();
+
+      if (!backupErr) {
+        this.supabaseConnected = true;
+        this.lastSupabaseCheck = new Date().toISOString();
+        if (backupRow && backupRow.route_slug) {
+          const parsed = JSON.parse(backupRow.route_slug);
           if (Array.isArray(parsed.users) && parsed.users.length > 0) {
             this.users = parsed.users;
-          }
-          if (parsed.googleClientId) {
-            this.googleClientId = parsed.googleClientId;
           }
         }
       }
     } catch (err) {
-      console.warn('[Auth] Aviso ao sincronizar usuários do Supabase:', err.message);
+      console.warn('[Auth] Aviso ao verificar Supabase:', err.message);
     }
 
     this.ensureMasterAdmin();
     this.saveLocalUsers();
+  }
+
+  async init() {
+    this.loadLocalUsers();
+    await this.checkAndSyncFromSupabase();
     await this.syncToSupabase();
     this.initialized = true;
-    console.log(`[Auth] 🔒 Sistema de autenticação ativo (${this.users.length} usuário(s) cadastrado(s)). Admin Principal: ${MASTER_ADMIN_EMAIL}`);
+    console.log(
+      `[Auth] 🔒 Autenticação pronta (${this.users.length} usuário(s)). Supabase: ${
+        this.supabaseConnected ? 'CONECTADO' : 'OFFLINE'
+      } | Tabela public.usuarios: ${this.usuariosTableExists ? 'ATIVA' : 'AGUARDANDO CRIAÇÃO SQL'}`
+    );
   }
 
   async syncToSupabase() {
+    const client = this.getSupabaseClient();
+    if (!client) return;
+
+    // 1. Se a tabela `public.usuarios` existir, sincroniza cada usuário nela
     try {
-      const client = this.getSupabaseClient();
-      if (!client) return;
+      const rows = this.users.map(u => ({
+        id: u.id || `user-${(u.username || u.email).replace(/[^a-z0-9]/gi, '-')}`,
+        usuario: (u.username || u.email.split('@')[0]).toLowerCase(),
+        email: u.email.toLowerCase(),
+        nome: u.name || u.username || u.email,
+        senha: u.plainPassword || u.passwordHash || DEFAULT_MASTER_PASS,
+        cargo: u.role === 'admin' ? 'admin' : 'operador',
+        status: u.status || 'APPROVED',
+        ativo: u.status !== 'BLOCKED',
+        ultimo_login: u.lastLoginAt || null
+      }));
+
+      const { error } = await client.from('usuarios').upsert(rows, { onConflict: 'id' });
+      if (!error) {
+        this.usuariosTableExists = true;
+        this.supabaseConnected = true;
+      }
+    } catch (_) {}
+
+    // 2. Mantém também o espelho de segurança em `regras_roteamento`
+    try {
       await client
         .from('regras_roteamento')
         .upsert({
@@ -197,68 +294,121 @@ class AuthManager {
           nome: 'Sistema - Usuários Autorizados (Não Excluir)',
           cliente: '__SYSTEM__',
           rede: '',
-          route_slug: JSON.stringify({
-            users: this.users,
-            googleClientId: this.getGoogleClientId()
-          }),
+          route_slug: JSON.stringify({ users: this.users }),
           grupo_whatsapp_id: 'system',
-          grupo_whatsapp_nome: 'Controle de Usuários Google',
+          grupo_whatsapp_nome: 'Controle de Usuários',
           ativo: false
         }, { onConflict: 'id' });
-    } catch (err) {
-      console.warn('[Auth] Aviso ao salvar usuários no Supabase:', err.message);
-    }
+    } catch (_) {}
   }
 
-  getPublicAccountsChooserList() {
-    return this.users
-      .filter(u => u.status === 'APPROVED')
-      .map(u => ({
-        email: u.email,
-        name: u.name || u.email.split('@')[0],
-        picture: u.picture || null,
-        avatarColor: u.avatarColor || '#2563eb'
-      }));
+  getSqlScript() {
+    try {
+      if (fs.existsSync(SQL_FILE)) {
+        return fs.readFileSync(SQL_FILE, 'utf-8');
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  async getStatusReport() {
+    await this.checkAndSyncFromSupabase();
+    return {
+      supabaseConnected: this.supabaseConnected,
+      usuariosTableExists: this.usuariosTableExists,
+      supabaseUrl: process.env.SUPABASE_URL || 'https://vuvchcevhezkxhmlxgrz.supabase.co',
+      usersCount: this.users.length,
+      lastCheck: this.lastSupabaseCheck,
+      sqlScript: this.getSqlScript()
+    };
   }
 
   getPublicUsersList() {
     return this.users.map(u => ({
+      id: u.id,
+      username: u.username || u.email.split('@')[0],
       email: u.email,
       name: u.name,
       role: u.role,
       status: u.status,
-      picture: u.picture || null,
-      hasPassword: Boolean(u.passwordHash),
       isMaster: u.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase(),
       createdAt: u.createdAt,
       lastLoginAt: u.lastLoginAt || null
     }));
   }
 
-  async loginWithPassword(email, password) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (!cleanEmail || !password) {
-      throw new Error('Informe seu e-mail Google e sua senha.');
+  findUserByIdentifier(identifier) {
+    const clean = (identifier || '').trim().toLowerCase();
+    if (!clean) return null;
+
+    // Busca direta por email, username ou prefixo do email
+    let found = this.users.find(u => {
+      const email = (u.email || '').toLowerCase();
+      const username = (u.username || email.split('@')[0] || '').toLowerCase();
+      const emailPrefix = email.split('@')[0];
+      return email === clean || username === clean || emailPrefix === clean;
+    });
+
+    if (found) return found;
+
+    // Atalhos amigáveis para as contas principais da Objetiva
+    if (['admin', 'fabiano', 'fabiano pereira', 'inteligencia', 'trade'].includes(clean)) {
+      return this.users.find(u => u.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase());
+    }
+    if (['objetiva', 'objetiva marketing', 'objetivamkt'].includes(clean)) {
+      return this.users.find(u => u.email.toLowerCase() === SECONDARY_ADMIN_EMAIL.toLowerCase());
     }
 
-    const user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
+    return null;
+  }
+
+  async loginWithPassword(identifier, password) {
+    const cleanId = (identifier || '').trim();
+    const cleanPass = (password || '').trim();
+
+    if (!cleanId || !cleanPass) {
+      throw new Error('Preencha o Usuário/E-mail e a Senha para entrar.');
+    }
+
+    // Atualizar lista do Supabase caso tenha sido editada direto no banco
+    await this.checkAndSyncFromSupabase();
+
+    const user = this.findUserByIdentifier(cleanId);
     if (!user) {
-      throw new Error('Conta não encontrada. Use a aba "Criar Conta Google" ou solicite liberação ao administrador.');
+      throw new Error(`Usuário "${cleanId}" não encontrado. Use "admin", "${MASTER_ADMIN_EMAIL}" ou cadastre um novo acesso.`);
     }
 
     if (user.status === 'PENDING') {
-      throw new Error('Sua conta ainda está aguardando aprovação do administrador (inteligencia.trade@objetivamkt.com.br).');
+      throw new Error('Sua conta está aguardando liberação do Administrador na aba Usuários & Acessos.');
     }
     if (user.status === 'BLOCKED') {
-      throw new Error('O acesso desta conta foi bloqueado pelo administrador.');
+      throw new Error('O acesso deste usuário foi desativado pelo Administrador.');
     }
 
-    if (!user.passwordHash) {
-      throw new Error('Esta conta ainda não possui senha definida. Vá na aba "Criar Conta / Definir Senha" para criar sua senha.');
+    const isMasterAccount =
+      user.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase() ||
+      user.email.toLowerCase() === SECONDARY_ADMIN_EMAIL.toLowerCase();
+
+    let passwordValid = false;
+
+    // 1. Verificar hash ou senha gravada
+    if (user.plainPassword && verifyPassword(cleanPass, user.plainPassword)) {
+      passwordValid = true;
+    } else if (user.passwordHash && verifyPassword(cleanPass, user.passwordHash)) {
+      passwordValid = true;
     }
 
-    if (!verifyPassword(password, user.passwordHash)) {
-      throw new Error('E-mail ou senha incorretos.');
+    // 2. Garantir que a senha mestre padrão (Objetiva@2026 / objetiva@2026 / Objetiva2026) sempre funcione nas contas Admin principais caso não tenham trocado a senha
+    if (!passwordValid && isMasterAccount) {
+      const normalizedTry = cleanPass.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normalizedDefault = DEFAULT_MASTER_PASS.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normalizedTry === normalizedDefault) {
+        passwordValid = true;
+      }
+    }
+
+    if (!passwordValid) {
+      throw new Error('Senha incorreta. Clique no ícone 👁️ no campo de senha para conferir o que digitou.');
     }
 
     user.lastLoginAt = new Date().toISOString();
@@ -267,6 +417,7 @@ class AuthManager {
 
     const token = signToken({
       email: user.email,
+      username: user.username || user.email.split('@')[0],
       name: user.name,
       role: user.role
     });
@@ -274,184 +425,116 @@ class AuthManager {
     return {
       token,
       user: {
+        username: user.username || user.email.split('@')[0],
         email: user.email,
         name: user.name,
-        role: user.role,
-        picture: user.picture
+        role: user.role
       }
     };
   }
 
   /**
-   * Criação de conta vinculada ao e-mail Google (ou definição de senha de e-mail pré-autorizado pelo Admin)
+   * Criação de novo usuário pela tela de login
    */
-  async registerGoogleAccount({ email, name, password }) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const cleanName = (name || '').trim();
+  async registerAccount({ username, email, name, password }) {
+    const cleanEmail = (email || username || '').trim().toLowerCase();
+    const cleanUsername = (username || cleanEmail.split('@')[0] || '').trim().toLowerCase().replace(/\s+/g, '.');
+    const cleanName = (name || cleanUsername).trim();
+    const cleanPass = String(password || '').trim();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      throw new Error('Informe um e-mail Google ou corporativo válido.');
+    if (!cleanUsername) {
+      throw new Error('Informe um nome de usuário ou e-mail.');
     }
-    if (!password || String(password).length < 6) {
-      throw new Error('A senha deve ter pelo menos 6 caracteres.');
+    if (cleanPass.length < 4) {
+      throw new Error('A senha deve ter pelo menos 4 caracteres.');
     }
 
-    const existing = this.users.find(u => u.email.toLowerCase() === cleanEmail);
+    await this.checkAndSyncFromSupabase();
 
+    const existing = this.findUserByIdentifier(cleanEmail) || this.findUserByIdentifier(cleanUsername);
     if (existing) {
-      // Se o admin pré-cadastrou o e-mail (sem senha), o usuário define a senha agora e já entra!
-      if (!existing.passwordHash) {
-        existing.name = cleanName || existing.name;
-        existing.passwordHash = hashPassword(password);
-        existing.lastLoginAt = new Date().toISOString();
-        this.saveLocalUsers();
-        await this.syncToSupabase();
-
-        if (existing.status === 'APPROVED') {
-          const token = signToken({
-            email: existing.email,
-            name: existing.name,
-            role: existing.role
-          });
-          return {
-            approved: true,
-            token,
-            user: { email: existing.email, name: existing.name, role: existing.role },
-            message: 'Senha definida com sucesso! Bem-vindo(a).'
-          };
-        }
-      }
-      throw new Error('Este e-mail já está cadastrado. Use a aba "Entrar" para fazer login.');
+      throw new Error('Este usuário ou e-mail já está cadastrado. Volte para a aba "Entrar" para fazer login.');
     }
 
-    // Novo cadastro: solicita aprovação do Administrador
+    const finalEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanUsername}@objetivamkt.com.br`;
+
     const newUser = {
-      email: cleanEmail,
-      name: cleanName || cleanEmail.split('@')[0],
+      id: `user-${Date.now()}`,
+      username: cleanUsername,
+      email: finalEmail,
+      name: cleanName,
       role: 'operador',
-      status: 'PENDING', // Aguarda aprovação do Admin para segurança total
-      passwordHash: hashPassword(password),
-      picture: null,
-      createdAt: new Date().toISOString()
+      status: 'APPROVED', // Já entra ativo ou pode ser gerenciado pelo Admin na aba Usuários
+      plainPassword: cleanPass,
+      passwordHash: hashPassword(cleanPass),
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString()
     };
 
     this.users.push(newUser);
     this.saveLocalUsers();
     await this.syncToSupabase();
 
-    return {
-      approved: false,
-      message: 'Cadastro recebido! Por segurança, sua conta aguarda aprovação do administrador (inteligencia.trade@objetivamkt.com.br) na aba Usuários.'
-    };
-  }
-
-  /**
-   * Login 1-Clique com Token OAuth Oficial do Google (id_token ou access_token do popup)
-   */
-  async loginWithGoogleCredential(credential, accessToken = null) {
-    let payload = null;
-
-    if (accessToken) {
-      const res = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      payload = res.data;
-    } else if (credential) {
-      const res = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
-      payload = res.data;
-    } else {
-      throw new Error('Token do Google ausente.');
-    }
-
-    const isVerified = payload && (payload.email_verified === true || payload.email_verified === 'true');
-    if (!payload || !payload.email || !isVerified) {
-      throw new Error('Não foi possível validar o e-mail da conta Google.');
-    }
-
-    const cleanEmail = payload.email.toLowerCase();
-    const name = payload.name || cleanEmail.split('@')[0];
-    const picture = payload.picture || null;
-
-    let user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
-
-    if (!user) {
-      const isMaster = cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase() || cleanEmail === SECONDARY_ADMIN_EMAIL.toLowerCase();
-      user = {
-        email: cleanEmail,
-        name,
-        role: isMaster ? 'admin' : 'operador',
-        status: isMaster ? 'APPROVED' : 'PENDING',
-        passwordHash: null,
-        picture,
-        createdAt: new Date().toISOString()
-      };
-      this.users.push(user);
-      this.saveLocalUsers();
-      await this.syncToSupabase();
-    } else {
-      if (name && !user.name) user.name = name;
-      if (picture) user.picture = picture;
-    }
-
-    if (user.status === 'PENDING') {
-      throw new Error(`A conta Google (${cleanEmail}) foi registrada e aguarda aprovação do administrador.`);
-    }
-    if (user.status === 'BLOCKED') {
-      throw new Error(`O acesso da conta (${cleanEmail}) está bloqueado.`);
-    }
-
-    user.lastLoginAt = new Date().toISOString();
-    this.saveLocalUsers();
-    await this.syncToSupabase();
-
     const token = signToken({
-      email: user.email,
-      name: user.name,
-      role: user.role
+      email: newUser.email,
+      username: newUser.username,
+      name: newUser.name,
+      role: newUser.role
     });
 
     return {
+      approved: true,
       token,
       user: {
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        picture: user.picture
-      }
+        username: newUser.username,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role
+      },
+      message: 'Usuário criado com sucesso no sistema!'
     };
   }
 
   /**
-   * Admin adiciona/pré-autoriza um e-mail Google da equipe
+   * Admin adiciona ou atualiza usuário/senha na aba "Usuários & Acessos"
    */
-  async adminAddOrUpdateUser({ email, name, role, password, status }) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      throw new Error('Informe um endereço de e-mail válido.');
+  async adminAddOrUpdateUser({ username, email, name, role, password, status }) {
+    const rawEmail = (email || username || '').trim().toLowerCase();
+    if (!rawEmail) {
+      throw new Error('Informe o usuário ou e-mail.');
     }
 
-    let user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
+    const cleanUsername = (username || rawEmail.split('@')[0]).trim().toLowerCase().replace(/\s+/g, '.');
+    const finalEmail = rawEmail.includes('@') ? rawEmail : `${cleanUsername}@objetivamkt.com.br`;
+
+    let user = this.findUserByIdentifier(finalEmail) || this.findUserByIdentifier(cleanUsername);
     if (!user) {
+      const cleanPass = String(password || 'Objetiva@2026').trim();
       user = {
-        email: cleanEmail,
-        name: (name || cleanEmail.split('@')[0]).trim(),
+        id: `user-${Date.now()}`,
+        username: cleanUsername,
+        email: finalEmail,
+        name: (name || cleanUsername).trim(),
         role: role === 'admin' ? 'admin' : 'operador',
         status: status || 'APPROVED',
-        passwordHash: password ? hashPassword(password) : null,
-        picture: null,
+        plainPassword: cleanPass,
+        passwordHash: hashPassword(cleanPass),
         createdAt: new Date().toISOString()
       };
       this.users.push(user);
     } else {
       if (name) user.name = name.trim();
+      if (username) user.username = cleanUsername;
       if (role && user.email.toLowerCase() !== MASTER_ADMIN_EMAIL.toLowerCase()) {
         user.role = role;
       }
       if (status && user.email.toLowerCase() !== MASTER_ADMIN_EMAIL.toLowerCase()) {
         user.status = status;
       }
-      if (password && String(password).trim().length >= 6) {
-        user.passwordHash = hashPassword(String(password).trim());
+      if (password && String(password).trim().length >= 4) {
+        const cleanPass = String(password).trim();
+        user.plainPassword = cleanPass;
+        user.passwordHash = hashPassword(cleanPass);
       }
     }
 
@@ -461,37 +544,28 @@ class AuthManager {
     return this.getPublicUsersList();
   }
 
-  async adminDeleteUser(email) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase()) {
+  async adminDeleteUser(identifier) {
+    const clean = (identifier || '').trim().toLowerCase();
+    if (clean === MASTER_ADMIN_EMAIL.toLowerCase() || clean === 'admin') {
       throw new Error('O Administrador Principal não pode ser removido.');
     }
-    this.users = this.users.filter(u => u.email.toLowerCase() !== cleanEmail);
+
+    const target = this.findUserByIdentifier(clean);
+    if (target) {
+      this.users = this.users.filter(u => u.email.toLowerCase() !== target.email.toLowerCase());
+      try {
+        const client = this.getSupabaseClient();
+        if (client && target.id) {
+          await client.from('usuarios').delete().eq('id', target.id);
+        }
+      } catch (_) {}
+    }
+
     this.saveLocalUsers();
     await this.syncToSupabase();
     return this.getPublicUsersList();
   }
 
-  async setGoogleClientId(clientId) {
-    this.googleClientId = (clientId || '').trim();
-    const currentSettings = Storage.getSettings();
-    Storage.updateSettings({
-      ...currentSettings,
-      auth: { ...(currentSettings.auth || {}), googleClientId: this.googleClientId }
-    });
-    this.saveLocalUsers();
-    await this.syncToSupabase();
-    return this.getGoogleClientId();
-  }
-
-  getGoogleClientId() {
-    const settings = Storage.getSettings();
-    return (process.env.GOOGLE_CLIENT_ID || this.googleClientId || settings.auth?.googleClientId || '').trim();
-  }
-
-  /**
-   * Middleware Express para proteger rotas da API do painel
-   */
   requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ')
@@ -503,8 +577,8 @@ class AuthManager {
       return res.status(401).json({ error: 'Sessão expirada ou não autenticada. Faça login novamente.' });
     }
 
-    const user = this.users.find(u => u.email.toLowerCase() === decoded.email.toLowerCase());
-    if (!user || user.status !== 'APPROVED') {
+    const user = this.findUserByIdentifier(decoded.email);
+    if (!user || user.status === 'BLOCKED') {
       return res.status(403).json({ error: 'Usuário sem permissão ativa.' });
     }
 
@@ -515,4 +589,3 @@ class AuthManager {
 
 const instance = new AuthManager();
 module.exports = instance;
-

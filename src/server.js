@@ -168,20 +168,21 @@ app.post([
 ], handleUmovmeWebhook);
 
 // -------------------------------------------------------------
-// 1.5. AUTENTICAÇÃO E GESTÃO DE USUÁRIOS (CONTA GOOGLE & SENHA)
+// 1.5. AUTENTICAÇÃO E GESTÃO DE USUÁRIOS (TABELA USUARIOS SUPABASE)
 // -------------------------------------------------------------
-app.get('/api/auth/config', (req, res) => {
-  res.json({
-    googleClientId: authManager.getGoogleClientId(),
-    masterAdminEmail: 'inteligencia.trade@objetivamkt.com.br',
-    accounts: authManager.getPublicAccountsChooserList()
-  });
+app.get('/api/auth/config', async (req, res) => {
+  try {
+    const status = await authManager.getStatusReport();
+    res.json(status);
+  } catch (err) {
+    res.json({ supabaseConnected: false, usuariosTableExists: false });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const result = await authManager.loginWithPassword(email, password);
+    const { username, email, password } = req.body;
+    const result = await authManager.loginWithPassword(username || email, password);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(401).json({ success: false, error: err.message });
@@ -190,21 +191,11 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { email, name, password } = req.body;
-    const result = await authManager.registerGoogleAccount({ email, name, password });
+    const { username, email, name, password } = req.body;
+    const result = await authManager.registerAccount({ username, email, name, password });
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/auth/google', async (req, res) => {
-  try {
-    const { credential, accessToken } = req.body;
-    const result = await authManager.loginWithGoogleCredential(credential, accessToken);
-    res.json({ success: true, ...result });
-  } catch (err) {
-    res.status(401).json({ success: false, error: err.message });
   }
 });
 
@@ -213,10 +204,10 @@ app.get('/api/auth/me', (req, res) => {
     res.json({
       success: true,
       user: {
+        username: req.user.username || req.user.email.split('@')[0],
         email: req.user.email,
         name: req.user.name,
-        role: req.user.role,
-        picture: req.user.picture
+        role: req.user.role
       }
     });
   });
@@ -227,10 +218,11 @@ const protectApi = (req, res, next) => authManager.requireAuth(req, res, next);
 app.use(['/api/whatsapp', '/api/mappings', '/api/settings', '/api/queue', '/api/history', '/api/simulate', '/api/users'], protectApi);
 
 // Rotas de Gerenciamento de Usuários (Aba Usuários & Acessos)
-app.get('/api/users', (req, res) => {
+app.get('/api/users', async (req, res) => {
+  const status = await authManager.getStatusReport();
   res.json({
     users: authManager.getPublicUsersList(),
-    googleClientId: authManager.getGoogleClientId()
+    ...status
   });
 });
 
@@ -239,15 +231,10 @@ app.post('/api/users', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Apenas administradores podem gerenciar usuários.' });
     }
-    const { email, name, role, password, status, googleClientId } = req.body;
-    if (typeof googleClientId === 'string') {
-      await authManager.setGoogleClientId(googleClientId);
-    }
-    if (email) {
-      const users = await authManager.adminAddOrUpdateUser({ email, name, role, password, status });
-      return res.json({ success: true, users, googleClientId: authManager.getGoogleClientId() });
-    }
-    res.json({ success: true, users: authManager.getPublicUsersList(), googleClientId: authManager.getGoogleClientId() });
+    const { username, email, name, role, password, status } = req.body;
+    const users = await authManager.adminAddOrUpdateUser({ username, email, name, role, password, status });
+    const report = await authManager.getStatusReport();
+    return res.json({ success: true, users, ...report });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

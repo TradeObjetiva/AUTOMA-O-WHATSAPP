@@ -924,139 +924,49 @@ function escapeHtml(str) {
 }
 
 // -------------------------------------------------------------
-// 7. AUTENTICAÇÃO POR CONTA GOOGLE & GERENCIAMENTO DE USUÁRIOS
+// 7. AMBIENTE DE LOGIN E SENHA INTERATIVO (CONECTADO AO SUPABASE)
 // -------------------------------------------------------------
 const authOverlay = document.getElementById('auth-overlay');
 const authAlertBox = document.getElementById('auth-alert-box');
-const authStepWelcome = document.getElementById('auth-step-welcome');
-const authStepGoogleChooser = document.getElementById('auth-step-google-chooser');
-const authStepEmailForm = document.getElementById('auth-step-email-form');
 const formAuthLogin = document.getElementById('form-auth-login');
 const formAuthRegister = document.getElementById('form-auth-register');
 const btnModeLogin = document.getElementById('btn-auth-mode-login');
 const btnModeRegister = document.getElementById('btn-auth-mode-register');
+let cachedUsuariosSql = '';
 
-let googleTokenClient = null;
-appState.googleClientId = '';
-appState.availableGoogleAccounts = [
-  { name: 'Fabiano Pereira', email: 'inteligencia.trade@objetivamkt.com.br', avatarColor: '#7e22ce' },
-  { name: 'Objetiva Marketing', email: 'objetiva.mkt@gmail.com', avatarColor: '#ea580c' }
-];
-
-function showAuthStep(stepName) {
+// Preenchimento rápido de usuário em 1 clique
+window.quickFillLogin = function(username) {
   hideAuthAlert();
-  if (authStepWelcome) authStepWelcome.style.display = stepName === 'welcome' ? 'block' : 'none';
-  if (authStepGoogleChooser) authStepGoogleChooser.style.display = stepName === 'chooser' ? 'block' : 'none';
-  if (authStepEmailForm) authStepEmailForm.style.display = stepName === 'email' ? 'block' : 'none';
-}
-
-function renderGoogleChooserAccounts() {
-  const listEl = document.getElementById('google-chooser-accounts-list');
-  if (!listEl) return;
-
-  const accounts = appState.availableGoogleAccounts || [];
-  listEl.innerHTML = accounts.map(acc => {
-    const initial = (acc.name || acc.email || 'U').trim().charAt(0).toUpperCase();
-    const color = acc.avatarColor || (acc.email.includes('objetiva.mkt') ? '#ea580c' : '#7e22ce');
-    return `
-      <button type="button" onclick="selectGoogleAccountFromChooser('${escapeHtml(acc.email)}', '${escapeHtml(acc.name)}', '${escapeHtml(color)}')"
-        style="width: 100%; display: flex; align-items: center; gap: 0.9rem; padding: 0.9rem 0.6rem; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.12); color: #ffffff; cursor: pointer; text-align: left; transition: background 0.15s;"
-        onmouseover="this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.background='transparent'">
-        <div style="width: 36px; height: 36px; border-radius: 50%; background: ${color}; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; flex-shrink: 0;">
-          ${escapeHtml(initial)}
-        </div>
-        <div style="overflow: hidden;">
-          <div style="font-size: 0.92rem; font-weight: 600; color: #f3f4f6; line-height: 1.25;">${escapeHtml(acc.name)}</div>
-          <div style="font-size: 0.8rem; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(acc.email)}</div>
-        </div>
-      </button>
-    `;
-  }).join('');
-}
-
-window.selectGoogleAccountFromChooser = function(email, name, color) {
-  showAuthStep('email');
-  btnModeLogin?.click();
-
-  const loginEmailInput = document.getElementById('login-email');
-  const loginEmailGroup = document.getElementById('login-email-group');
-  const pill = document.getElementById('selected-google-account-pill');
-  const avatarEl = document.getElementById('selected-account-avatar');
-  const nameEl = document.getElementById('selected-account-name');
-  const emailEl = document.getElementById('selected-account-email');
+  const emailInput = document.getElementById('login-email');
   const passInput = document.getElementById('login-password');
-
-  if (loginEmailInput) loginEmailInput.value = email;
-  if (loginEmailGroup) loginEmailGroup.style.display = 'none';
-  if (pill) {
-    pill.style.display = 'flex';
-    if (avatarEl) {
-      avatarEl.textContent = (name || email).charAt(0).toUpperCase();
-      avatarEl.style.background = color || '#7e22ce';
-    }
-    if (nameEl) nameEl.textContent = name;
-    if (emailEl) emailEl.textContent = email;
-  }
-  if (passInput) {
-    passInput.value = '';
-    setTimeout(() => passInput.focus(), 80);
-  }
+  if (emailInput) emailInput.value = username;
+  if (passInput) passInput.focus();
 };
 
-function clearSelectedAccountPill() {
-  const loginEmailGroup = document.getElementById('login-email-group');
-  const pill = document.getElementById('selected-google-account-pill');
-  if (loginEmailGroup) loginEmailGroup.style.display = 'block';
-  if (pill) pill.style.display = 'none';
-}
-
-document.getElementById('btn-continue-google')?.addEventListener('click', () => {
-  // Se o Google OAuth Client ID oficial estiver configurado, abre o popup oficial accounts.google.com/v3/signin/accountchooser
-  if (appState.googleClientId && window.google && window.google.accounts && window.google.accounts.oauth2) {
-    try {
-      if (!googleTokenClient) {
-        googleTokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: appState.googleClientId,
-          scope: 'openid email profile',
-          prompt: 'select_account',
-          callback: handleGoogleTokenPopupResponse
-        });
-      }
-      googleTokenClient.requestAccessToken({ prompt: 'select_account' });
-      return;
-    } catch (err) {
-      console.warn('Fallback para seletor integrado:', err);
-    }
+// Botão Mostrar/Ocultar senha no Login
+document.getElementById('btn-toggle-login-pass')?.addEventListener('click', (e) => {
+  const input = document.getElementById('login-password');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    e.currentTarget.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    e.currentTarget.textContent = '👁️';
   }
-
-  // Abre a tela "Fazer Login com o Google • Escolha uma conta" (idêntica à Imagem 2)
-  renderGoogleChooserAccounts();
-  showAuthStep('chooser');
 });
 
-document.getElementById('btn-continue-email')?.addEventListener('click', () => {
-  clearSelectedAccountPill();
-  showAuthStep('email');
-});
-
-document.getElementById('btn-google-use-another')?.addEventListener('click', () => {
-  clearSelectedAccountPill();
-  const loginEmailInput = document.getElementById('login-email');
-  if (loginEmailInput) loginEmailInput.value = '';
-  showAuthStep('email');
-});
-
-document.getElementById('btn-back-from-chooser')?.addEventListener('click', () => {
-  showAuthStep('welcome');
-});
-
-document.getElementById('btn-back-to-welcome')?.addEventListener('click', () => {
-  showAuthStep('welcome');
-});
-
-document.getElementById('btn-change-account')?.addEventListener('click', () => {
-  renderGoogleChooserAccounts();
-  showAuthStep('chooser');
+// Botão Mostrar/Ocultar senha no Cadastro
+document.getElementById('btn-toggle-register-pass')?.addEventListener('click', (e) => {
+  const input = document.getElementById('register-password');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    e.currentTarget.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    e.currentTarget.textContent = '👁️';
+  }
 });
 
 function showAuthAlert(msg, type = 'error') {
@@ -1081,7 +991,6 @@ function hideAuthAlert() {
 function showAuthOverlay() {
   if (authOverlay) {
     authOverlay.style.display = 'flex';
-    showAuthStep('welcome');
   }
 }
 
@@ -1092,7 +1001,7 @@ function hideAuthOverlay(user) {
     const badge = document.getElementById('user-logged-badge');
     const emailEl = document.getElementById('user-logged-email');
     if (badge && emailEl) {
-      emailEl.textContent = user.email;
+      emailEl.textContent = user.name || user.username || user.email;
       badge.style.display = 'inline-flex';
     }
   }
@@ -1108,7 +1017,6 @@ btnModeLogin?.addEventListener('click', () => {
 
 btnModeRegister?.addEventListener('click', () => {
   hideAuthAlert();
-  clearSelectedAccountPill();
   btnModeRegister.className = 'btn btn-primary btn-sm';
   btnModeLogin.className = 'btn btn-secondary btn-sm';
   formAuthRegister.style.display = 'block';
@@ -1130,28 +1038,28 @@ formAuthLogin?.addEventListener('submit', async (e) => {
   const password = document.getElementById('login-password').value;
   const btn = document.getElementById('btn-submit-login');
   btn.disabled = true;
-  btn.textContent = 'Autenticando...';
+  btn.textContent = '⏳ Verificando acesso...';
 
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ username: email, email, password })
     });
     const data = await res.json();
     if (res.ok && data.token) {
       localStorage.setItem('trade_hub_token', data.token);
       hideAuthOverlay(data.user);
-      showToast(`Bem-vindo(a), ${data.user.name || data.user.email}!`, 'success');
+      showToast(`Bem-vindo(a), ${data.user.name || data.user.username || data.user.email}!`, 'success');
       startDashboardAll();
     } else {
-      showAuthAlert(data.error || 'Falha no login.');
+      showAuthAlert(data.error || 'Usuário ou senha incorretos.');
     }
   } catch (err) {
     showAuthAlert('Erro de conexão com o servidor.');
   } finally {
     btn.disabled = false;
-    btn.textContent = '🚀 Prosseguir para o Painel';
+    btn.textContent = '🚀 Entrar no Sistema';
   }
 });
 
@@ -1163,33 +1071,33 @@ formAuthRegister?.addEventListener('submit', async (e) => {
   const password = document.getElementById('register-password').value;
   const btn = document.getElementById('btn-submit-register');
   btn.disabled = true;
-  btn.textContent = 'Criando conta...';
+  btn.textContent = '⏳ Salvando usuário...';
 
   try {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify({ name, username: email, email, password })
     });
     const data = await res.json();
     if (res.ok) {
       if (data.approved && data.token) {
         localStorage.setItem('trade_hub_token', data.token);
         hideAuthOverlay(data.user);
-        showToast(data.message || 'Conta ativada com sucesso!', 'success');
+        showToast(data.message || 'Usuário criado com sucesso!', 'success');
         startDashboardAll();
       } else {
-        showAuthAlert(data.message || 'Cadastro enviado para aprovação do administrador!', 'success');
+        showAuthAlert(data.message || 'Usuário cadastrado!', 'success');
         formAuthRegister.reset();
       }
     } else {
-      showAuthAlert(data.error || 'Erro ao criar conta.');
+      showAuthAlert(data.error || 'Erro ao criar usuário.');
     }
   } catch (err) {
     showAuthAlert('Erro ao conectar ao servidor.');
   } finally {
     btn.disabled = false;
-    btn.textContent = '✨ Cadastrar Conta Google';
+    btn.textContent = '✨ Criar Usuário e Entrar';
   }
 });
 
@@ -1200,56 +1108,55 @@ document.getElementById('btn-logout-system')?.addEventListener('click', () => {
   showToast('Sessão encerrada.', 'info');
 });
 
-async function handleGoogleTokenPopupResponse(tokenResponse) {
-  if (!tokenResponse || !tokenResponse.access_token) return;
-  try {
-    hideAuthAlert();
-    const res = await fetch('/api/auth/google', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accessToken: tokenResponse.access_token })
-    });
-    const data = await res.json();
-    if (res.ok && data.token) {
-      localStorage.setItem('trade_hub_token', data.token);
-      hideAuthOverlay(data.user);
-      showToast(`Conectado com Google: ${data.user.email}`, 'success');
-      startDashboardAll();
+function updateSupabaseAuthBadges(data) {
+  if (!data) return;
+  if (data.sqlScript) cachedUsuariosSql = data.sqlScript;
+
+  const loginBadgeText = document.getElementById('auth-supabase-status-text');
+  if (loginBadgeText) {
+    if (data.supabaseConnected && data.usuariosTableExists) {
+      loginBadgeText.textContent = 'Supabase Conectado • Tabela usuarios Ativa';
+    } else if (data.supabaseConnected) {
+      loginBadgeText.textContent = 'Supabase Conectado • Pronto para Login';
     } else {
-      showAuthAlert(data.error || 'Conta Google não autorizada.');
+      loginBadgeText.textContent = 'Modo Local Ativo';
     }
-  } catch (err) {
-    showAuthAlert('Erro ao autenticar com o Google.');
+  }
+
+  const tabBadge = document.getElementById('users-supabase-table-badge');
+  const sqlTitle = document.getElementById('supabase-sql-title');
+  const sqlDesc = document.getElementById('supabase-sql-desc');
+  const sqlPreview = document.getElementById('usuarios-sql-preview');
+
+  if (sqlPreview && cachedUsuariosSql) {
+    sqlPreview.textContent = cachedUsuariosSql;
+  }
+
+  if (tabBadge) {
+    if (data.usuariosTableExists) {
+      tabBadge.className = 'badge badge-success';
+      tabBadge.textContent = '🟢 Tabela public.usuarios Ativa no Supabase';
+      if (sqlTitle) sqlTitle.innerHTML = '✅ Tabela <code>public.usuarios</code> conectada e sincronizada no Supabase!';
+      if (sqlDesc) sqlDesc.innerHTML = 'Todos os usuários e senhas abaixo estão gravados diretamente na tabela <code>public.usuarios</code> do seu Supabase.';
+    } else {
+      tabBadge.className = 'badge badge-warning';
+      tabBadge.textContent = '⚠️ Falta rodar o SQL da tabela public.usuarios no Supabase';
+    }
   }
 }
 
-async function handleGoogleCredentialResponse(response) {
-  try {
-    hideAuthAlert();
-    const res = await fetch('/api/auth/google', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: response.credential })
-    });
-    const data = await res.json();
-    if (res.ok && data.token) {
-      localStorage.setItem('trade_hub_token', data.token);
-      hideAuthOverlay(data.user);
-      showToast(`Conectado com Google: ${data.user.email}`, 'success');
-      startDashboardAll();
-    } else {
-      showAuthAlert(data.error || 'Conta Google não autorizada.');
-    }
-  } catch (err) {
-    showAuthAlert('Erro ao autenticar com o Google.');
-  }
-}
+document.getElementById('btn-copy-usuarios-sql')?.addEventListener('click', () => {
+  if (!cachedUsuariosSql) return;
+  navigator.clipboard.writeText(cachedUsuariosSql).then(() => {
+    showToast('SQL copiado! Cole no SQL Editor do Supabase e clique em Run.', 'success');
+  });
+});
 
-function initGoogleOAuthButton(clientId) {
-  if (!clientId) return;
-  appState.googleClientId = clientId;
-  googleTokenClient = null;
-}
+document.getElementById('btn-toggle-usuarios-sql')?.addEventListener('click', () => {
+  const pre = document.getElementById('usuarios-sql-preview');
+  if (!pre) return;
+  pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+});
 
 // Gerenciamento de Usuários na aba "Usuários & Acessos"
 async function loadUsers() {
@@ -1258,10 +1165,7 @@ async function loadUsers() {
     if (!res.ok) return;
     const data = await res.json();
     appState.usersList = data.users || [];
-    const clientInput = document.getElementById('setting-google-client-id');
-    if (clientInput && typeof data.googleClientId === 'string') {
-      clientInput.value = data.googleClientId;
-    }
+    updateSupabaseAuthBadges(data);
     renderUsersTable(appState.usersList);
   } catch (_) {}
 }
@@ -1271,35 +1175,39 @@ function renderUsersTable(users) {
   if (!tbody) return;
 
   if (!users || users.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = users.map(u => {
-    let statusBadge = '<span class="badge badge-success">✅ Autorizado</span>';
-    if (u.status === 'PENDING') statusBadge = '<span class="badge badge-warning">⏳ Aguardando Aprovação</span>';
+    let statusBadge = '<span class="badge badge-success">✅ Ativo</span>';
+    if (u.status === 'PENDING') statusBadge = '<span class="badge badge-warning">⏳ Pendente</span>';
     if (u.status === 'BLOCKED') statusBadge = '<span class="badge badge-danger">🚫 Bloqueado</span>';
 
     const roleBadge = u.role === 'admin'
-      ? '<span class="badge badge-info">👑 Administrador</span>'
+      ? '<span class="badge badge-info">👑 Admin</span>'
       : '<span class="badge badge-secondary" style="background: rgba(255,255,255,0.08);">👤 Operador</span>';
 
     const lastLogin = u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString('pt-BR') : 'Nunca acessou';
+    const username = u.username || u.email.split('@')[0];
+
+    const changePassBtn = `<button class="btn btn-secondary btn-sm" onclick="promptChangePassword('${escapeHtml(u.email)}', '${escapeHtml(u.name || username)}')">🔑 Senha</button>`;
 
     let actionsHtml = '';
     if (u.isMaster) {
-      actionsHtml = `<span style="font-size: 0.78rem; color: var(--accent-wa);">🔒 Conta Principal</span>`;
+      actionsHtml = `<div style="display: flex; gap: 0.4rem; align-items: center;">${changePassBtn}<span style="font-size: 0.75rem; color: var(--accent-wa);">🔒 Principal</span></div>`;
     } else {
       const approveBtn = u.status !== 'APPROVED'
-        ? `<button class="btn btn-primary btn-sm" onclick="changeUserStatus('${escapeHtml(u.email)}', 'APPROVED')">✅ Aprovar</button>`
+        ? `<button class="btn btn-primary btn-sm" onclick="changeUserStatus('${escapeHtml(u.email)}', 'APPROVED')">✅ Ativar</button>`
         : `<button class="btn btn-secondary btn-sm" onclick="changeUserStatus('${escapeHtml(u.email)}', 'BLOCKED')">🚫 Bloquear</button>`;
-      const deleteBtn = `<button class="btn btn-danger btn-sm" onclick="removeUserAccount('${escapeHtml(u.email)}')">🗑️ Excluir</button>`;
-      actionsHtml = `<div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">${approveBtn}${deleteBtn}</div>`;
+      const deleteBtn = `<button class="btn btn-danger btn-sm" onclick="removeUserAccount('${escapeHtml(u.email)}')">🗑️</button>`;
+      actionsHtml = `<div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">${changePassBtn}${approveBtn}${deleteBtn}</div>`;
     }
 
     return `
       <tr>
         <td><strong>${escapeHtml(u.name || '-')}</strong></td>
+        <td><code style="color: #4ade80; font-weight: 600;">${escapeHtml(username)}</code></td>
         <td><code style="color: #38bdf8;">${escapeHtml(u.email)}</code></td>
         <td>${roleBadge}</td>
         <td>${statusBadge}</td>
@@ -1310,6 +1218,30 @@ function renderUsersTable(users) {
   }).join('');
 }
 
+window.promptChangePassword = async function(email, name) {
+  const newPass = prompt(`Digite a nova senha para "${name}" (${email}):`);
+  if (!newPass || newPass.trim().length < 4) {
+    if (newPass !== null) showToast('A senha deve ter pelo menos 4 caracteres.', 'error');
+    return;
+  }
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: newPass.trim() })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Senha de ${name} atualizada com sucesso!`, 'success');
+      renderUsersTable(data.users || []);
+    } else {
+      showToast(data.error || 'Erro ao alterar senha.', 'error');
+    }
+  } catch (_) {
+    showToast('Erro ao comunicar com o servidor.', 'error');
+  }
+};
+
 window.changeUserStatus = async function(email, status) {
   try {
     const res = await fetch('/api/users', {
@@ -1319,7 +1251,7 @@ window.changeUserStatus = async function(email, status) {
     });
     const data = await res.json();
     if (res.ok) {
-      showToast(`Status de ${email} atualizado para ${status === 'APPROVED' ? 'Autorizado' : 'Bloqueado'}!`, 'success');
+      showToast(`Status de ${email} atualizado!`, 'success');
       renderUsersTable(data.users || []);
     } else {
       showToast(data.error || 'Erro ao atualizar usuário.', 'error');
@@ -1330,7 +1262,7 @@ window.changeUserStatus = async function(email, status) {
 };
 
 window.removeUserAccount = async function(email) {
-  if (!confirm(`Deseja remover o acesso do e-mail ${email}?`)) return;
+  if (!confirm(`Deseja remover o acesso do usuário ${email}?`)) return;
   try {
     const res = await fetch(`/api/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
     const data = await res.json();
@@ -1356,12 +1288,13 @@ document.getElementById('form-manage-user')?.addEventListener('submit', async (e
     const res = await fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name, role, password, status: 'APPROVED' })
+      body: JSON.stringify({ username: email, email, name, role, password, status: 'APPROVED' })
     });
     const data = await res.json();
     if (res.ok) {
-      showToast(`Conta Google (${email}) salva e autorizada com sucesso!`, 'success');
+      showToast(`Usuário (${email}) salvo com sucesso no Supabase!`, 'success');
       document.getElementById('form-manage-user').reset();
+      updateSupabaseAuthBadges(data);
       renderUsersTable(data.users || []);
     } else {
       showToast(data.error || 'Erro ao salvar usuário.', 'error');
@@ -1371,36 +1304,12 @@ document.getElementById('form-manage-user')?.addEventListener('submit', async (e
   }
 });
 
-document.getElementById('btn-save-google-client')?.addEventListener('click', async () => {
-  const googleClientId = document.getElementById('setting-google-client-id')?.value.trim() || '';
-  try {
-    const res = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ googleClientId })
-    });
-    if (res.ok) {
-      showToast('Google Client ID salvo com sucesso!', 'success');
-      initGoogleOAuthButton(googleClientId);
-    }
-  } catch (_) {
-    showToast('Erro ao salvar Client ID.', 'error');
-  }
-});
-
 // Inicialização da Autenticação e Loop de Polling
 async function bootstrapApp() {
   try {
     const cfgRes = await originalFetch('/api/auth/config');
     const cfg = await cfgRes.json();
-    if (cfg) {
-      if (cfg.googleClientId) {
-        initGoogleOAuthButton(cfg.googleClientId);
-      }
-      if (Array.isArray(cfg.accounts) && cfg.accounts.length > 0) {
-        appState.availableGoogleAccounts = cfg.accounts;
-      }
-    }
+    updateSupabaseAuthBadges(cfg);
   } catch (_) {}
 
   const token = localStorage.getItem('trade_hub_token');
