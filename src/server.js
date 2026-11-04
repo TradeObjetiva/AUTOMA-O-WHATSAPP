@@ -50,18 +50,6 @@ app.use(['/api/webhook', '/webhook'], (req, res, next) => {
   console.log(`\n======================================================`);
   console.log(`📥 [NOVA REQUISIÇÃO WEBHOOK] ${req.method} ${req.originalUrl}`);
   console.log(`🌐 IP Origem: ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}`);
-  console.log(`Content-Type: ${req.headers['content-type']}`);
-  console.log(`Payload Recebido:`, typeof req.body === 'object' ? JSON.stringify(req.body, null, 2).substring(0, 800) : req.body);
-  try {
-    const fs = require('fs');
-    fs.writeFileSync(path.join(__dirname, '../data/last_raw_webhook.json'), JSON.stringify({
-      timestamp: new Date().toISOString(),
-      method: req.method,
-      url: req.originalUrl,
-      headers: req.headers,
-      body: req.body
-    }, null, 2), 'utf-8');
-  } catch (_) {}
   next();
 });
 
@@ -279,6 +267,20 @@ app.get('/api/whatsapp/groups', async (req, res) => {
   });
 });
 
+app.post('/api/whatsapp/test-group', async (req, res) => {
+  try {
+    const { groupId, groupName, clientName } = req.body;
+    if (!groupId) {
+      return res.status(400).json({ error: 'ID do grupo não informado.' });
+    }
+    const text = `✅ *Teste de Conexão — Trade Marketing Hub*\nGrupo ativo: *${groupName || groupId}*\nCliente/Regra: *${clientName || 'Geral'}*\nHorário: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+    await whatsappManager.sendTextMessage(groupId, text);
+    res.json({ success: true, message: `Mensagem de teste enviada ao grupo "${groupName || groupId}"!` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 3. ENDPOINTS DE MAPEAMENTOS E REGRAS (CLIENTES E REDES)
 // -------------------------------------------------------------
@@ -398,72 +400,14 @@ app.post('/api/history/retry/:id', async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
-// 5. SIMULADOR DE ATIVIDADE UMOV.ME (Teste imediato)
-// -------------------------------------------------------------
-app.post('/api/simulate', async (req, res) => {
-  try {
-    const { promoterName, pdvName, pdvCode, activityName, clientName, networkName, notes, photos } = req.body;
-    
-    const client = clientName || 'Arroz Fantástico';
-    const network = networkName || 'Mundial';
-    const pdv = pdvName || `Supermercados ${network} - Loja Barra`;
-
-    const simulatedPayload = {
-      id: `SIM-${Math.floor(100000 + Math.random() * 900000)}`,
-      agent: { name: promoterName || 'Carlos Silva - Promotor' },
-      local: {
-        name: pdv,
-        code: pdvCode || '1042',
-        clientName: client,
-        network: network,
-        rede: network
-      },
-      activityType: { name: activityName || 'Reposição e Ponto Extra (Frente de Caixa)' },
-      endDate: new Date().toISOString(),
-      notes: notes || 'Ponto extra montado com sucesso, gondola 100% abastecida.',
-      attachments: (photos && photos.length > 0) ? photos : [
-        {
-          type: 'PHOTO',
-          url: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800&auto=format&fit=crop&q=80',
-          name: 'gondola_arroz.jpg'
-        },
-        {
-          type: 'PHOTO',
-          url: 'https://images.unsplash.com/photo-1534723452862-4c874018d66d?w=800&auto=format&fit=crop&q=80',
-          name: 'ponto_extra_arroz.jpg'
-        }
-      ]
-    };
-
-    const context = {
-      urlClient: client,
-      urlNetwork: network
-    };
-
-    const activity = UmovmeParser.extractActivityData(simulatedPayload, context);
-    const targetGroups = MessageRouter.resolveTargetGroups(activity, context);
-
-    if (targetGroups.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Nenhum grupo de WhatsApp mapeado para Cliente: "${client}" e Rede: "${network}". Cadastre a regra na aba "Mapeamento".`
-      });
-    }
-
-    const queueItem = dispatchQueue.enqueueActivity(activity, targetGroups);
-
-    res.json({
-      success: true,
-      message: `Atividade simulada criada para [${client} ➔ Rede ${network}] e enviada para ${targetGroups.length} grupo(s)!`,
-      activity,
-      targetGroups,
-      queueId: queueItem.id
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+// Desligamento gracioso (SIGTERM/SIGINT) para deploys no Render sem derrubar a sessão do WhatsApp
+const handleShutdown = async (signal) => {
+  console.log(`\n[Server] Recebido ${signal}. Encerrando conexão WhatsApp com segurança antes de finalizar...`);
+  await whatsappManager.gracefulShutdown();
+  process.exit(0);
+};
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
 
 // Inicialização do servidor e do WhatsApp
 app.listen(PORT, async () => {

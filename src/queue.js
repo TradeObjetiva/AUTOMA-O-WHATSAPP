@@ -1,5 +1,4 @@
 const whatsappManager = require('./whatsapp');
-const EvolutionApiClient = require('./evolutionClient');
 const Storage = require('./storage');
 const UmovmeParser = require('./parser');
 const MessageRouter = require('./router');
@@ -57,28 +56,16 @@ class DispatchQueue {
       activity,
       targetGroups,
       enqueuedAt: new Date().toISOString(),
-      status: 'QUEUED', // QUEUED, PROCESSING, COMPLETED, FAILED
+      status: 'QUEUED',
       retries: 0,
+      currentPhotoIndex: 0,
+      totalPhotos: (activity.photoUrls || []).length,
+      currentGroupName: targetGroups[0]?.name || '',
       onComplete: typeof options.onComplete === 'function' ? options.onComplete : null,
       onFail: typeof options.onFail === 'function' ? options.onFail : null
     };
 
     this.queue.push(queueItem);
-
-    // Registra entrada no histórico local
-    Storage.addHistoryEntry({
-      id: queueItem.id,
-      activityId: activity.activityId,
-      clientName: activity.clientName || '',
-      networkName: activity.networkName || '',
-      pdvName: activity.pdvName,
-      promoterName: activity.promoterName,
-      activityName: activity.activityName,
-      date: activity.date,
-      photoCount: (activity.photoUrls || []).length,
-      targetGroups: targetGroups.map(g => g.name || g.id),
-      status: 'QUEUED'
-    });
 
     console.log(`[Fila] Atividade #${activity.activityId} adicionada à fila para ${targetGroups.length} grupo(s). Total na fila: ${this.queue.length}`);
 
@@ -97,13 +84,11 @@ class DispatchQueue {
 
     try {
       current.status = 'PROCESSING';
-      Storage.updateHistoryStatus(current.id, 'PROCESSING');
       console.log(`[Fila] Processando atividade #${current.activity.activityId}...`);
 
       const settings = Storage.getSettings();
       const minDelay = (settings.queue?.minDelaySeconds || 3) * 1000;
       const maxDelay = (settings.queue?.maxDelaySeconds || 7) * 1000;
-      const useEvolution = settings.whatsapp?.engine === 'evolution';
 
       // Desmembrar URLs coladas se houver e descartar placeholders nomedia
       const ungluedPhotos = [];
@@ -126,18 +111,17 @@ class DispatchQueue {
 
       const photoUrls = ungluedPhotos;
       const totalPhotos = photoUrls.length;
+      current.totalPhotos = totalPhotos;
 
       for (const group of current.targetGroups) {
+        current.currentGroupName = group.name || group.id;
+        current.currentPhotoIndex = 0;
         console.log(`[Fila] Enviando para grupo "${group.name}" (${group.id})...`);
 
         // 1ª MENSAGEM: Card de Resumo Informativo da Atividade
         const summaryCard = MessageRouter.formatSummaryCard(current.activity);
         console.log(`[Fila] 📤 Enviando 1ª Mensagem (Card de Resumo) ao grupo "${group.name}"...`);
-        if (useEvolution) {
-          await EvolutionApiClient.sendTextMessage(group.id, summaryCard);
-        } else {
-          await whatsappManager.sendTextMessage(group.id, summaryCard);
-        }
+        await whatsappManager.sendTextMessage(group.id, summaryCard);
 
         // Intervalo anti-ban antes das fotos
         if (totalPhotos > 0) {
@@ -148,38 +132,29 @@ class DispatchQueue {
             const photoItem = photoUrls[i];
             const photoUrl = typeof photoItem === 'object' ? photoItem.url : photoItem;
             const photoIndex = i + 1;
+            current.currentPhotoIndex = photoIndex;
             const caption = MessageRouter.formatPhotoCaption(current.activity, photoItem, photoIndex, totalPhotos);
 
             try {
               console.log(`[Fila] Baixando foto ${photoIndex}/${totalPhotos}: ${photoUrl.substring(0, 70)}...`);
               const photoBuffer = await UmovmeParser.downloadPhoto(photoUrl);
-
-              if (useEvolution) {
-                await EvolutionApiClient.sendImageMessage(group.id, photoBuffer, caption, `foto_${photoIndex}.jpg`);
-              } else {
-                await whatsappManager.sendImageMessage(group.id, photoBuffer, caption);
-              }
-
+              await whatsappManager.sendImageMessage(group.id, photoBuffer, caption);
               console.log(`[Fila] ✅ Foto ${photoIndex}/${totalPhotos} enviada ao grupo ${group.name} (${caption.split('\n')[0]})`);
             } catch (errPhoto) {
-              console.error(`[Fila] ⚠️ Falha ao baixar/enviar foto ${photoIndex}/${totalPhotos} (${photoUrl}): ${errPhoto.message}. Foto ignorada (não enviada ao WhatsApp).`);
+              console.error(`[Fila] ⚠️ Falha ao baixar/enviar foto ${photoIndex}/${totalPhotos} (${photoUrl}): ${errPhoto.message}. Foto ignorada.`);
             }
 
-            // Intervalo humano e anti-ban entre fotos consecutivas
             if (i < totalPhotos - 1) {
               const delay = getRandomInt(minDelay, maxDelay);
-              console.log(`[Fila] Aguardando ${Math.round(delay/1000)}s antes da próxima foto (Anti-Ban)...`);
               await sleep(delay);
             }
           }
         }
 
-        // Intervalo entre diferentes grupos destinatários
         await sleep(getRandomInt(minDelay, maxDelay));
       }
 
       current.status = 'COMPLETED';
-      Storage.updateHistoryStatus(current.id, 'COMPLETED');
       if (current.onComplete) {
         try { await current.onComplete(); } catch (_) {}
       }
@@ -196,7 +171,6 @@ class DispatchQueue {
         this.queue.unshift(current);
       } else {
         current.status = 'FAILED';
-        Storage.updateHistoryStatus(current.id, 'FAILED', err.message);
         if (current.onFail) {
           try { await current.onFail(err); } catch (_) {}
         }
@@ -204,7 +178,6 @@ class DispatchQueue {
     } finally {
       this.currentItem = null;
       this.isProcessing = false;
-      // Processar próximo se houver
       setTimeout(() => this.processNext(), 1000);
     }
   }
@@ -216,14 +189,18 @@ class DispatchQueue {
       currentItem: this.currentItem ? {
         id: this.currentItem.id,
         activityId: this.currentItem.activity.activityId,
+        client: this.currentItem.activity.clientName || '',
         pdv: this.currentItem.activity.pdvName,
         promoter: this.currentItem.activity.promoterName,
-        photos: (this.currentItem.activity.photoUrls || []).length,
+        groupName: this.currentItem.currentGroupName || '',
+        currentPhoto: this.currentItem.currentPhotoIndex || 0,
+        photos: this.currentItem.totalPhotos || (this.currentItem.activity.photoUrls || []).length,
         status: 'PROCESSING'
       } : null,
       items: this.queue.map(q => ({
         id: q.id,
         activityId: q.activity.activityId,
+        client: q.activity.clientName || '',
         pdv: q.activity.pdvName,
         promoter: q.activity.promoterName,
         photos: (q.activity.photoUrls || []).length,

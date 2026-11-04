@@ -379,12 +379,48 @@ function renderRulesTable(rules) {
           </span>
         </td>
         <td>
-          <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')">🗑️ Excluir</button>
+          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="testMappedGroup('${escapeHtml(r.targetGroupId)}', '${escapeHtml(r.targetGroupName || 'Grupo')}', '${escapeHtml(clientName)}', this)" title="Enviar mensagem de teste para este grupo">
+              🔔 Testar
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')">🗑️ Excluir</button>
+          </div>
         </td>
       </tr>
     `;
   }).join('');
 }
+
+window.testMappedGroup = async function(groupId, groupName, clientName, btnEl) {
+  if (!groupId) {
+    showToast('Esta regra não possui um JID de grupo válido.', 'error');
+    return;
+  }
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = '⏳...';
+  }
+  try {
+    const res = await fetch('/api/whatsapp/test-group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId, groupName, clientName })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || `Teste enviado ao grupo ${groupName}!`, 'success');
+    } else {
+      showToast(data.error || 'Erro ao enviar teste para o grupo.', 'error');
+    }
+  } catch (err) {
+    showToast('Erro de comunicação com o servidor.', 'error');
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = '🔔 Testar';
+    }
+  }
+};
 
 // Alternar formulário nova regra
 const formCard = document.getElementById('form-new-rule-card');
@@ -662,6 +698,7 @@ function applyFeedFiltersAndRender() {
   if (elPending) elPending.textContent = pendingCount;
   if (elFailed) elFailed.textContent = failedCount;
 
+  appState.filteredHistory = finalItems;
   renderActivityFeed(finalItems);
 }
 
@@ -829,55 +866,56 @@ document.getElementById('pill-filter-failed')?.addEventListener('click', () => {
   if (statEl) { statEl.value = 'FAILED'; applyFeedFiltersAndRender(); }
 });
 
-// 5. Simulador
-document.getElementById('form-simulator')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = document.getElementById('btn-submit-simulate');
-  btn.disabled = true;
-  btn.textContent = 'Enviando atividade de teste...';
+// Exportar Histórico Filtrado para Planilha Excel (CSV UTF-8 com BOM)
+document.getElementById('btn-export-feed-csv')?.addEventListener('click', () => {
+  const items = appState.filteredHistory || appState.history || [];
+  if (items.length === 0) {
+    showToast('Nenhuma atividade na lista atual para exportar.', 'error');
+    return;
+  }
 
-  const photoLines = document.getElementById('sim-photos').value
-    .split('\n')
-    .map(p => p.trim())
-    .filter(p => p.length > 0)
-    .map(url => ({ type: 'PHOTO', url, name: 'foto.jpg' }));
-
-  const payload = {
-    clientName: document.getElementById('sim-client')?.value || 'Arroz Fantástico',
-    networkName: document.getElementById('sim-network')?.value || 'Mundial',
-    pdvName: document.getElementById('sim-pdv')?.value || 'Supermercados Mundial - Loja Barra',
-    promoterName: document.getElementById('sim-promoter')?.value || 'Carlos Silva - Promotor',
-    activityName: document.getElementById('sim-activity')?.value || 'Ponto Extra e Abastecimento de Gôndola',
-    notes: document.getElementById('sim-notes')?.value || '',
-    photos: photoLines
+  const headers = ['Data/Hora', 'Cliente/Marca', 'Rede', 'Loja/PDV', 'Promotor', 'Tipo de Atividade', 'Qtd Fotos', 'Grupos WhatsApp', 'Status', 'Erro'];
+  const statusLabels = {
+    COMPLETED: 'Enviado',
+    QUEUED: 'Na Fila',
+    PROCESSING: 'Enviando',
+    FAILED: 'Falha',
+    IGNORED_NO_GROUP: 'Sem Grupo'
   };
 
-  try {
-    const res = await fetch('/api/simulate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
+  const escapeCsv = (val) => {
+    const str = String(val ?? '').replace(/\r?\n/g, ' ').trim();
+    return `"${str.replace(/"/g, '""')}"`;
+  };
 
-    if (data.success) {
-      showToast('Atividade de teste recebida e enfileirada!', 'success');
-      // Trocar para a aba de feed
-      document.querySelector('[data-tab=tab-feed]').click();
-      loadHistory();
-      checkQueue();
-    } else {
-      showToast(data.error || 'Erro na simulação.', 'error');
-    }
-  } catch (err) {
-    showToast('Erro ao disparar simulação.', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🚀 Disparar Atividade de Teste Agora';
-  }
+  const rows = items.map(i => [
+    escapeCsv(i.date || ''),
+    escapeCsv(i.clientName || ''),
+    escapeCsv(i.networkName || ''),
+    escapeCsv(i.pdvName || ''),
+    escapeCsv(i.promoterName || ''),
+    escapeCsv(i.activityName || ''),
+    escapeCsv(i.photoCount || 0),
+    escapeCsv((i.targetGroups || []).join(' | ')),
+    escapeCsv(statusLabels[i.status] || i.status || ''),
+    escapeCsv(i.error || '')
+  ].join(';'));
+
+  const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dayVal = document.getElementById('feed-filter-day')?.value || '7dias';
+  a.href = url;
+  a.download = `relatorio-trade-hub-${dayVal.toLowerCase()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`Planilha exportada com ${items.length} registro(s)!`, 'success');
 });
 
-// 6. Configurações
+// 6. Configurações da Fila Anti-Ban
 async function loadSettings() {
   try {
     const res = await fetch('/api/settings');
@@ -885,19 +923,17 @@ async function loadSettings() {
     const s = appState.settings;
 
     if (s.queue) {
-      document.getElementById('setting-min-delay').value = s.queue.minDelaySeconds || 3;
-      document.getElementById('setting-max-delay').value = s.queue.maxDelaySeconds || 7;
-      document.getElementById('setting-caption-template').value = s.queue.captionTemplate || '';
+      const minEl = document.getElementById('setting-min-delay');
+      const maxEl = document.getElementById('setting-max-delay');
+      if (minEl) minEl.value = s.queue.minDelaySeconds || 3;
+      if (maxEl) maxEl.value = s.queue.maxDelaySeconds || 7;
     }
 
     if (s.defaultGroup) {
-      document.getElementById('setting-default-group-id').value = s.defaultGroup.groupId || '';
-      document.getElementById('setting-default-group-name').value = s.defaultGroup.groupName || '';
-    }
-
-    if (s.umovme) {
-      document.getElementById('setting-umovme-appid').value = s.umovme.appId || '';
-      document.getElementById('setting-umovme-appkey').value = s.umovme.appKey || '';
+      const gidEl = document.getElementById('setting-default-group-id');
+      const gnameEl = document.getElementById('setting-default-group-name');
+      if (gidEl) gidEl.value = s.defaultGroup.groupId || '';
+      if (gnameEl) gnameEl.value = s.defaultGroup.groupName || '';
     }
   } catch (err) {
     console.error('Erro ao carregar configurações:', err);
@@ -907,24 +943,18 @@ async function loadSettings() {
 document.getElementById('form-settings')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const current = appState.settings || {};
-  
+
   const updated = {
     ...current,
     queue: {
       ...(current.queue || {}),
-      minDelaySeconds: parseInt(document.getElementById('setting-min-delay').value) || 3,
-      maxDelaySeconds: parseInt(document.getElementById('setting-max-delay').value) || 7,
-      captionTemplate: document.getElementById('setting-caption-template').value
+      minDelaySeconds: parseInt(document.getElementById('setting-min-delay')?.value) || 3,
+      maxDelaySeconds: parseInt(document.getElementById('setting-max-delay')?.value) || 7
     },
     defaultGroup: {
       enabled: true,
-      groupId: document.getElementById('setting-default-group-id').value.trim(),
-      groupName: document.getElementById('setting-default-group-name').value.trim()
-    },
-    umovme: {
-      appId: document.getElementById('setting-umovme-appid').value.trim(),
-      appKey: document.getElementById('setting-umovme-appkey').value.trim(),
-      downloadTimeoutMs: 15000
+      groupId: (document.getElementById('setting-default-group-id')?.value || '').trim(),
+      groupName: (document.getElementById('setting-default-group-name')?.value || '').trim()
     }
   };
 
@@ -945,7 +975,7 @@ document.getElementById('form-settings')?.addEventListener('submit', async (e) =
   }
 });
 
-// Fila polling
+// Fila polling & Monitor de Disparo Ao Vivo
 async function checkQueue() {
   try {
     const res = await fetch('/api/queue');
@@ -956,6 +986,53 @@ async function checkQueue() {
       statQueueCount.style.color = 'var(--accent-amber)';
     } else {
       statQueueCount.style.color = 'var(--text-main)';
+    }
+
+    const monitorEl = document.getElementById('live-dispatch-monitor');
+    const badgeEl = document.getElementById('live-monitor-badge');
+    if (!monitorEl) return;
+
+    if (data.isProcessing && data.currentItem) {
+      const c = data.currentItem;
+      const total = c.photos || 0;
+      const currentPhoto = c.currentPhoto || 0;
+      const pct = total > 0 ? Math.min(100, Math.round((currentPhoto / total) * 100)) : 50;
+
+      if (badgeEl) {
+        badgeEl.className = 'badge badge-warning';
+        badgeEl.textContent = '📤 Disparando Agora...';
+      }
+
+      monitorEl.innerHTML = `
+        <div style="background: rgba(37, 211, 102, 0.08); border: 1px solid rgba(37, 211, 102, 0.3); border-radius: 12px; padding: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.6rem;">
+            <div>
+              <strong style="color: var(--text-main); font-size: 0.95rem;">🏪 ${escapeHtml(c.pdv || 'Loja em Campo')}</strong>
+              ${c.client ? `<span class="badge badge-info" style="margin-left: 0.5rem;">${escapeHtml(c.client)}</span>` : ''}
+            </div>
+            <span style="font-size: 0.82rem; color: #4ade80; font-weight: 600;">
+              ${currentPhoto > 0 ? `📸 Enviando foto ${currentPhoto} de ${total}` : '📝 Enviando card de resumo...'}
+            </span>
+          </div>
+          <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.7rem;">
+            👤 Promotor: <strong>${escapeHtml(c.promoter || '-')}</strong> &bull; 🎯 Grupo: <strong>${escapeHtml(c.groupName || '-')}</strong>
+          </div>
+          <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
+            <div style="width: ${pct}%; height: 100%; background: linear-gradient(90deg, #25d366, #38bdf8); transition: width 0.4s ease;"></div>
+          </div>
+          ${data.pendingCount > 0 ? `<div style="font-size: 0.76rem; color: var(--text-dim); margin-top: 0.55rem;">⏳ +${data.pendingCount} atividade(s) aguardando na fila anti-ban</div>` : ''}
+        </div>
+      `;
+    } else {
+      if (badgeEl) {
+        badgeEl.className = 'badge badge-info';
+        badgeEl.textContent = data.pendingCount > 0 ? `⏳ ${data.pendingCount} na Fila` : '💤 Fila Livre';
+      }
+      monitorEl.innerHTML = `
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          ✅ Fila livre no momento. Aguardando novas atividades finalizadas na uMov.me...
+        </p>
+      `;
     }
   } catch (_) {}
 }

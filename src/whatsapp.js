@@ -29,10 +29,12 @@ class WhatsAppManager {
     this.qrCodeRaw = null;
     this.qrCodeDataUrl = null;
     this.userProfile = null;
+    this.connectedSince = null;
     this.groupsCache = [];
     this.lastGroupsFetch = 0;
     this.logger = pino({ level: 'silent' });
     this.isInitializing = false;
+    this.isShuttingDown = false;
     this.reconnectTimeout = null;
     this.backupTimeout = null;
     this.supabase = null;
@@ -57,14 +59,14 @@ class WhatsAppManager {
   }
 
   /**
-   * Restaura os arquivos da sessão do WhatsApp a partir do Supabase Cloud
-   * caso a pasta local auth_info_baileys tenha sido apagada após um deploy no Render.
+   * Restaura os arquivos da sessão do WhatsApp a partir do Supabase Cloud.
+   * Se forceOverwrite = true, sobrescreve os arquivos locais com a versão mais recente da nuvem.
    */
-  async restoreSessionFromSupabase() {
+  async restoreSessionFromSupabase(forceOverwrite = false) {
     try {
       const credsPath = path.join(AUTH_FOLDER, 'creds.json');
-      if (fs.existsSync(credsPath)) {
-        return true; // Já existe localmente
+      if (!forceOverwrite && fs.existsSync(credsPath)) {
+        return true;
       }
 
       const client = this.getSupabaseClient();
@@ -98,7 +100,7 @@ class WhatsAppManager {
         restoredCount++;
       }
 
-      console.log(`[WhatsApp Cloud Auth] ☁️ Sessão do WhatsApp restaurada automaticamente do Supabase (${restoredCount} arquivos)! Reconectando sem precisar de QR Code...`);
+      console.log(`[WhatsApp Cloud Auth] ☁️ Sessão do WhatsApp restaurada do Supabase (${restoredCount} arquivos).`);
       return restoredCount > 0;
     } catch (err) {
       console.warn('[WhatsApp Cloud Auth] Aviso ao restaurar sessão do Supabase:', err.message);
@@ -109,17 +111,21 @@ class WhatsAppManager {
   /**
    * Salva os arquivos da pasta auth_info_baileys no Supabase Cloud (com debounce)
    */
-  scheduleSessionBackup(delayMs = 2000) {
+  scheduleSessionBackup(delayMs = 2500) {
+    if (this.isShuttingDown) return;
     if (this.backupTimeout) {
       clearTimeout(this.backupTimeout);
     }
     this.backupTimeout = setTimeout(() => {
       this.backupTimeout = null;
-      this.backupSessionToSupabase();
+      if (!this.isShuttingDown && this.status === 'CONNECTED') {
+        this.backupSessionToSupabase();
+      }
     }, delayMs);
   }
 
   async backupSessionToSupabase() {
+    if (this.isShuttingDown) return false;
     try {
       const credsPath = path.join(AUTH_FOLDER, 'creds.json');
       if (!fs.existsSync(credsPath)) return false;
@@ -130,7 +136,6 @@ class WhatsAppManager {
       const allFiles = fs.readdirSync(AUTH_FOLDER).filter(f => f.endsWith('.json'));
       if (!allFiles.includes('creds.json')) return false;
 
-      // Priorizar arquivos essenciais (creds, sessions, app-state, tctoken, lid-mapping) e limitar pre-keys antigas
       const essentialFiles = [];
       const preKeyFiles = [];
 
@@ -142,7 +147,6 @@ class WhatsAppManager {
         }
       }
 
-      // Manter as 120 pre-keys/sender-keys mais recentes para o payload ser leve e rápido
       const selectedPreKeys = preKeyFiles.slice(-120);
       const filesToBackup = [...essentialFiles, ...selectedPreKeys];
 
@@ -171,7 +175,6 @@ class WhatsAppManager {
         return false;
       }
 
-      console.log(`[WhatsApp Cloud Auth] ☁️ Sessão salva no Supabase Cloud (${Object.keys(filesMap).length} arquivos protegidos contra deploy/restart).`);
       return true;
     } catch (err) {
       console.warn('[WhatsApp Cloud Auth] Exceção ao salvar sessão no Supabase:', err.message);
@@ -204,10 +207,15 @@ class WhatsAppManager {
     }
   }
 
-  scheduleReconnect(delayMs = 4000) {
+  scheduleReconnect(delayMs = 5000, forceCloudPull = false) {
+    if (this.isShuttingDown) return;
     this.cancelScheduledReconnect();
-    this.reconnectTimeout = setTimeout(() => {
+    this.reconnectTimeout = setTimeout(async () => {
       this.reconnectTimeout = null;
+      if (this.isShuttingDown) return;
+      if (forceCloudPull) {
+        await this.restoreSessionFromSupabase(true);
+      }
       this.init();
     }, delayMs);
   }
@@ -222,29 +230,41 @@ class WhatsAppManager {
     }
   }
 
+  /**
+   * Chamado quando o Render envia SIGTERM/SIGINT para substituir o container em um deploy.
+   * Fecha o socket imediatamente SEM fazer logout e SEM apagar o backup na nuvem.
+   */
+  async gracefulShutdown() {
+    console.log('[WhatsApp] 🛑 Encerrando instância atual graciosamente (Deploy/Restart)...');
+    this.isShuttingDown = true;
+    this.cancelScheduledReconnect();
+    if (this.backupTimeout) {
+      clearTimeout(this.backupTimeout);
+      this.backupTimeout = null;
+    }
+    await this.cleanupSocket();
+  }
+
   async init() {
-    if (this.isInitializing) {
-      console.log('[WhatsApp] Inicialização já em andamento, aguardando...');
+    if (this.isInitializing || this.isShuttingDown) {
       return false;
     }
 
     this.isInitializing = true;
     this.cancelScheduledReconnect();
 
-    // Limpar socket antigo se ainda existir em memória
     await this.cleanupSocket();
 
     if (!fs.existsSync(AUTH_FOLDER)) {
       fs.mkdirSync(AUTH_FOLDER, { recursive: true });
     }
 
-    // Tentar restaurar sessão salva no Supabase caso o container tenha reiniciado após deploy
-    await this.restoreSessionFromSupabase();
+    await this.restoreSessionFromSupabase(false);
 
     try {
       this.status = 'CONNECTING';
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-      
+
       let version = [2, 3000, 1017531287];
       let isLatest = true;
       try {
@@ -266,7 +286,7 @@ class WhatsAppManager {
           keys: makeCacheableSignalKeyStore(state.keys, this.logger)
         },
         generateHighQualityLinkPreview: false,
-        syncFullHistory: false, // CRÍTICO: Não carregar histórico pesado para evitar timeout e desconexões
+        syncFullHistory: false,
         markOnlineOnConnect: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
@@ -276,16 +296,20 @@ class WhatsAppManager {
       });
 
       this.sock.ev.on('creds.update', async () => {
+        if (this.isShuttingDown) return;
         await saveCreds();
-        this.scheduleSessionBackup(2000);
+        this.scheduleSessionBackup(2500);
       });
 
       this.sock.ev.on('connection.update', async (update) => {
+        if (this.isShuttingDown) return;
+
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
           this.qrCodeRaw = qr;
           this.status = 'QR_READY';
+          this.connectedSince = null;
           try {
             this.qrCodeDataUrl = await QRCode.toDataURL(qr);
           } catch (e) {
@@ -302,46 +326,50 @@ class WhatsAppManager {
           const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
           const isReplaced = statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
 
-          console.log(`[WhatsApp] Conexão encerrada. Código: ${statusCode || 'N/A'}${errorMessage ? ' (' + errorMessage + ')' : ''}`);
+          console.log(`[WhatsApp] Conexão fechada. Código: ${statusCode || 'N/A'}${errorMessage ? ' (' + errorMessage + ')' : ''}`);
 
           this.status = 'DISCONNECTED';
           this.qrCodeRaw = null;
           this.qrCodeDataUrl = null;
           this.userProfile = null;
+          this.connectedSince = null;
 
           if (isReplaced) {
-            console.log('[WhatsApp] ⚠️ CONEXÃO SUBSTITUÍDA (Código 440): Esta sessão foi aberta em outro local ou desconectada pelo aparelho. Limpando credenciais antigas...');
-            await this.wipeAuthFolder(true);
-            this.cancelScheduledReconnect();
-            this.scheduleReconnect(2500);
+            // PROTEÇÃO CRÍTICA DE DEPLOY:
+            // Código 440 acontece quando o novo container do Render sobe e assume a sessão enquanto o antigo ainda está desligando.
+            // NUNCA devemos apagar o backup do Supabase aqui!
+            console.log('[WhatsApp] ℹ️ Código 440 (Sessão assumida por outra instância / novo deploy). Mantendo backup intacto no Supabase.');
+            await this.cleanupSocket();
+            // Aguardar 35s em silêncio: se esta for a instância antiga do Render, ela já terá sido encerrada;
+            // se for a instância ativa que sofreu colisão momentânea, ela recarrega do Supabase após o container antigo morrer.
+            this.scheduleReconnect(35000, true);
           } else if (isLoggedOut) {
-            console.log('[WhatsApp] ⚠️ Sessão desconectada pelo celular (Logout). Limpando credenciais para novo QR Code...');
+            console.log('[WhatsApp] ⚠️ Aparelho desconectado manualmente pelo celular (Logout 401). Limpando credenciais para gerar novo QR Code...');
             await this.wipeAuthFolder(true);
-            this.scheduleReconnect(1500);
+            this.scheduleReconnect(2000);
           } else if (isRestartRequired) {
             console.log('[WhatsApp] 🔄 Reinício solicitado pelo WhatsApp (515). Reconectando rapidamente...');
             this.scheduleReconnect(1500);
           } else {
-            console.log('[WhatsApp] ⏳ Queda temporária de conexão. Reconectando em 5 segundos...');
+            console.log('[WhatsApp] ⏳ Oscilação temporária de rede. Reconectando em 5 segundos...');
             this.scheduleReconnect(5000);
           }
         } else if (connection === 'open') {
           console.log('[WhatsApp] ✅ CONECTADO COM SUCESSO AO WHATSAPP!');
           this.status = 'CONNECTED';
+          this.connectedSince = new Date().toISOString();
           this.qrCodeRaw = null;
           this.qrCodeDataUrl = null;
           this.userProfile = this.sock.user;
           this.cancelScheduledReconnect();
 
-          // Salvar sessão imediatamente no Supabase após conectar e novamente após 15s (sincronização inicial de chaves)
-          this.scheduleSessionBackup(1500);
+          this.scheduleSessionBackup(2000);
           setTimeout(() => {
-            if (this.status === 'CONNECTED') {
+            if (!this.isShuttingDown && this.status === 'CONNECTED') {
               this.backupSessionToSupabase();
             }
           }, 15000);
 
-          // Buscar grupos disponíveis após estabilizar
           setTimeout(() => this.getGroups(true), 2500);
         }
       });
@@ -375,12 +403,8 @@ class WhatsAppManager {
     return await this.resetSession();
   }
 
-  /**
-   * Reseta a sessão por completo, fecha qualquer conexão aberta,
-   * apaga as credenciais locais e da nuvem e gera um QR Code limpo.
-   */
   async resetSession() {
-    console.log('\n[WhatsApp] 🔄 Resetando sessão para conectar outro WhatsApp...');
+    console.log('\n[WhatsApp] 🔄 Resetando sessão manualmente...');
     this.cancelScheduledReconnect();
 
     if (this.sock) {
@@ -395,13 +419,13 @@ class WhatsAppManager {
     await this.wipeAuthFolder(true);
 
     this.status = 'DISCONNECTED';
+    this.connectedSince = null;
     this.qrCodeRaw = null;
     this.qrCodeDataUrl = null;
     this.userProfile = null;
     this.groupsCache = [];
     this.isInitializing = false;
 
-    // Iniciar novo ciclo para gerar novo QR Code
     setTimeout(() => {
       this.init();
     }, 1000);
@@ -468,6 +492,7 @@ class WhatsAppManager {
     return {
       status: this.status,
       connected: this.status === 'CONNECTED',
+      connectedSince: this.connectedSince,
       qrCodeDataUrl: this.qrCodeDataUrl,
       user: this.userProfile ? {
         id: this.userProfile.id,

@@ -249,6 +249,32 @@ class SupabaseWorker {
     }
 
     try {
+      // 1. Auto-Recovery: Destravar atividades que ficaram presas em 'PROCESSANDO' (> 5 minutos) por causa de restart/deploy
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: stuckRows } = await this.client
+        .from('atividades_umovme')
+        .select('id, atividade_id, updated_at')
+        .eq('status', 'PROCESSANDO')
+        .lt('updated_at', fiveMinutesAgo)
+        .limit(10);
+
+      if (stuckRows && stuckRows.length > 0) {
+        const activeMap = dispatchQueue.getActiveActivityMap();
+        for (const s of stuckRows) {
+          const actId = s.atividade_id || s.id;
+          if (!activeMap[actId]) {
+            this.processingRowIds.delete(s.id);
+            if (s.atividade_id) this.processingRowIds.delete(s.atividade_id);
+            await this.client
+              .from('atividades_umovme')
+              .update({ status: 'PENDENTE', updated_at: new Date().toISOString() })
+              .eq('id', s.id);
+            console.log(`[Supabase Worker] 🔄 Auto-Recovery: Atividade #${actId} destravada de PROCESSANDO para PENDENTE.`);
+          }
+        }
+      }
+
+      // 2. Processar atividades PENDENTES na fila
       const { data, error } = await this.client
         .from('atividades_umovme')
         .select('*')
