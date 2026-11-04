@@ -188,8 +188,7 @@ class SupabaseWorker {
     try {
       const { data, error } = await this.client
         .from('regras_roteamento')
-        .select('*')
-        .eq('ativo', true);
+        .select('*');
 
       if (error) {
         if (error.code === 'PGRST205') {
@@ -207,7 +206,7 @@ class SupabaseWorker {
           routeSlug: r.route_slug || '',
           targetGroupId: r.grupo_whatsapp_id,
           targetGroupName: r.grupo_whatsapp_nome,
-          active: r.ativo
+          active: r.ativo !== false
         }));
 
         Storage.updateMappings({ rules: localRules });
@@ -446,7 +445,7 @@ class SupabaseWorker {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await this.client
         .from('atividades_umovme')
-        .select('id, atividade_id, cliente, rede, pdv_nome, promotor_nome, tipo_atividade, data_execucao, fotos, grupos_destino, status, erro, created_at, updated_at')
+        .select('id, atividade_id, cliente, rede, pdv_nome, promotor_nome, tipo_atividade, observacoes, data_execucao, fotos, grupos_destino, status, erro, created_at, updated_at')
         .neq('status', 'CANCELADO')
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
@@ -467,12 +466,46 @@ class SupabaseWorker {
         if (seenActivityIds.has(actId)) continue;
         seenActivityIds.add(actId);
 
-        // Contar fotos válidas
+        // Extrair e normalizar fotos válidas para galeria/miniaturas
         const rawPhotos = Array.isArray(row.fotos) ? row.fotos : [];
-        const validPhotos = rawPhotos.filter(p => {
-          const u = typeof p === 'object' ? (p.url || '') : String(p || '');
-          return u.startsWith('http') && !u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/');
-        });
+        const validPhotos = [];
+        for (const p of rawPhotos) {
+          const rawUrl = typeof p === 'object' ? (p.url || '') : String(p || '');
+          const rawLabel = typeof p === 'object' ? (p.label || '') : '';
+          if (!rawUrl || rawUrl.toLowerCase().includes('nomedia') || rawUrl.toLowerCase().includes('/logo/')) {
+            continue;
+          }
+          const matches = rawUrl.match(/https?:\/\/(?:(?!https?:\/\/)[^\s;"'<>])+/gi);
+          if (matches && matches.length > 0) {
+            matches.forEach((u, idx) => {
+              if (!u.toLowerCase().includes('nomedia') && !u.toLowerCase().includes('/logo/')) {
+                validPhotos.push({
+                  url: u,
+                  label: idx === 0 ? rawLabel : ''
+                });
+              }
+            });
+          } else if (rawUrl.startsWith('http')) {
+            validPhotos.push({ url: rawUrl, label: rawLabel });
+          }
+        }
+
+        // Detectar se houve Ruptura Total reportada nas observações/tipo
+        const obsText = String(row.observacoes || '');
+        let hasRuptura = false;
+        let rupturaText = '';
+        const rupMatch = obsText.match(/Ruptura(?:\s+Total)?\s*:\s*([^;\n|]+)/i);
+        if (rupMatch && rupMatch[1]) {
+          const val = rupMatch[1].trim();
+          const lowerVal = val.toLowerCase();
+          if (val && !['não', 'nao', 'nenhuma', 'sem ruptura', '0', 'false', '-'].includes(lowerVal)) {
+            hasRuptura = true;
+            rupturaText = val;
+          }
+        } else if (/ruptura\s+total\s*:\s*sim/i.test(obsText)) {
+          hasRuptura = true;
+          rupturaText = 'Sim';
+        }
 
         // Determinar status real sincronizado com a fila em memória
         let finalStatus = 'QUEUED';
@@ -503,12 +536,16 @@ class SupabaseWorker {
           pdvName: (row.pdv_nome || 'Loja em Campo').trim(),
           promoterName: (row.promotor_nome || 'Promotor de Campo').trim(),
           activityName: (row.tipo_atividade || 'Execução e Reposição em Loja').trim(),
+          observacoes: obsText,
+          hasRuptura,
+          rupturaText,
           date: dateParts.display,
           dateKey: dateParts.dateKey,
           dateLabel: dateParts.dateLabel,
           timestamp: row.created_at,
           updatedAt: row.updated_at,
           photoCount: validPhotos.length,
+          photos: validPhotos.slice(0, 20),
           targetGroups: groups.length > 0 ? groups : ['Sem grupo mapeado'],
           status: finalStatus,
           error: row.erro || null

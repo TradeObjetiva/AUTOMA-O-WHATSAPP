@@ -4,11 +4,40 @@ let appState = {
   mappings: { rules: [] },
   settings: {},
   history: [],
+  filteredHistory: [],
   queue: {},
   currentUser: null,
   usersList: [],
-  webhookBaseUrl: 'https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook'
+  webhookBaseUrl: 'https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook',
+  lightbox: {
+    photos: [],
+    currentIndex: 0,
+    title: '',
+    subtitle: ''
+  }
 };
+
+// =========================================================================
+// 0. TEMA ESCURO / CLARO EXECUTIVO (COM PERSISTÊNCIA)
+// =========================================================================
+function applyTheme(theme) {
+  const validTheme = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', validTheme);
+  localStorage.setItem('trade_hub_theme', validTheme);
+  const btn = document.getElementById('btn-toggle-theme');
+  if (btn) {
+    btn.innerHTML = validTheme === 'light' ? '🌙 Modo Escuro' : '☀️ Modo Claro';
+  }
+}
+
+applyTheme(localStorage.getItem('trade_hub_theme') || 'dark');
+
+document.getElementById('btn-toggle-theme')?.addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  showToast(next === 'light' ? '☀️ Modo Claro Executivo ativado!' : '🌙 Modo Escuro Objetiva ativado!', 'info');
+});
 
 // Interceptor global para enviar o Token de Autenticação em todas as chamadas de API
 const originalFetch = window.fetch.bind(window);
@@ -29,6 +58,7 @@ window.fetch = async (url, options = {}) => {
 const statusBadge = document.getElementById('status-badge');
 const statusText = document.getElementById('status-text');
 const statWaStatus = document.getElementById('stat-wa-status');
+const statWaSub = document.getElementById('stat-wa-sub');
 const statGroupsCount = document.getElementById('stat-groups-count');
 const statActivitiesCount = document.getElementById('stat-activities-count');
 const statQueueCount = document.getElementById('stat-queue-count');
@@ -37,12 +67,6 @@ const waActions = document.getElementById('wa-connection-actions');
 const groupsTableBody = document.getElementById('groups-table-body');
 const rulesTableBody = document.getElementById('rules-table-body');
 const activityFeedList = document.getElementById('activity-feed-list');
-const webhookUrlDisplay = document.getElementById('webhook-url-display');
-
-// Setup initial webhook URL
-if (webhookUrlDisplay) {
-  webhookUrlDisplay.textContent = appState.webhookBaseUrl;
-}
 
 // Toast notification helper
 function showToast(message, type = 'info') {
@@ -73,41 +97,47 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // Auto-carregar dados específicos
     if (tabId === 'tab-groups') loadGroups(true);
     if (tabId === 'tab-mappings') loadMappings();
-    if (tabId === 'tab-feed') loadHistory();
+    if (tabId === 'tab-feed' || tabId === 'tab-ranking') loadHistory();
     if (tabId === 'tab-users') loadUsers();
     if (tabId === 'tab-settings') loadSettings();
   });
 });
 
-// 1. WhatsApp Status & QR Code Polling
+// =========================================================================
+// 1. WHATSAPP STATUS & QR CODE POLLING
+// =========================================================================
 async function checkWhatsAppStatus() {
   try {
     const res = await fetch('/api/whatsapp/status');
     const data = await res.json();
     appState.waStatus = data.status;
 
-    // Atualizar badge do header
     statusBadge.className = `status-badge ${data.status.toLowerCase()}`;
     
     if (data.status === 'CONNECTED') {
-      statusText.textContent = `Online: ${data.user?.name || 'WhatsApp'}`;
+      const userName = data.user?.name || 'WhatsApp';
+      statusText.textContent = `Online: ${userName}`;
       statWaStatus.textContent = 'Conectado';
       statWaStatus.style.color = 'var(--accent-wa)';
+      if (statWaSub) statWaSub.textContent = `Conta: ${userName}`;
       renderConnectedView(data.user);
     } else if (data.status === 'QR_READY') {
       statusText.textContent = 'Aguardando Leitura QR';
       statWaStatus.textContent = 'Escanear QR';
       statWaStatus.style.color = 'var(--accent-amber)';
+      if (statWaSub) statWaSub.textContent = 'Aponte o celular para o QR Code';
       renderQRView(data.qrCodeDataUrl);
     } else if (data.status === 'CONNECTING') {
       statusText.textContent = 'Conectando...';
       statWaStatus.textContent = 'Conectando';
       statWaStatus.style.color = 'var(--accent-blue)';
+      if (statWaSub) statWaSub.textContent = 'Sincronizando sessão...';
       renderConnectingView();
     } else {
       statusText.textContent = 'Desconectado';
       statWaStatus.textContent = 'Desconectado';
       statWaStatus.style.color = 'var(--accent-red)';
+      if (statWaSub) statWaSub.textContent = 'Clique para gerar QR Code';
       renderDisconnectedView();
     }
   } catch (err) {
@@ -156,9 +186,9 @@ function renderConnectedView(user) {
       <div class="connected-info">
         <div class="avatar">${(user?.name || 'WA').substring(0, 2).toUpperCase()}</div>
         <div>
-          <h3 style="font-size: 1.1rem; color: var(--text-main); font-weight: 700;">${user?.name || 'Conta Conectada'}</h3>
-          <p style="font-size: 0.85rem; color: var(--text-muted);">${user?.id || 'ID Ativo'}</p>
-          <span class="badge badge-success" style="margin-top: 0.4rem;">Ativo para Disparos 24h</span>
+          <h3 style="font-size: 1.1rem; color: var(--text-main); font-weight: 700;">${escapeHtml(user?.name || 'Conta Conectada')}</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(user?.id || 'ID Ativo')}</p>
+          <span class="badge badge-success" style="margin-top: 0.4rem;">🟢 Ativo para Disparos 24h</span>
         </div>
       </div>
       <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
@@ -181,7 +211,7 @@ function renderConnectingView() {
 
   waConnectionView.innerHTML = `
     <div class="qr-container">
-      <div class="pulse-dot" style="width: 20px; height: 20px; margin-bottom: 1rem; color: var(--accent-blue);"></div>
+      <div class="pulse-dot" style="width: 20px; height: 20px; margin-bottom: 1rem; color: var(--accent-brand);"></div>
       <p style="color: var(--text-main); font-weight: 600;">Estabilizando conexão com o WhatsApp...</p>
       <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.4rem;">Aguarde alguns segundos ou clique em Cancelar para gerar um QR novo.</p>
     </div>
@@ -229,18 +259,109 @@ async function handleLogout() {
   await handleResetSession('Deseja realmente desconectar esta conta de WhatsApp?');
 }
 
-// 2. Grupos de WhatsApp
+// =========================================================================
+// 2. GRUPOS DE WHATSAPP & COMUNICADO RÁPIDO
+// =========================================================================
 async function loadGroups(force = false) {
   try {
     const res = await fetch(`/api/whatsapp/groups${force ? '?force=true' : ''}`);
     const data = await res.json();
     appState.groups = data.groups || [];
-    statGroupsCount.textContent = data.count || 0;
+    if (statGroupsCount) statGroupsCount.textContent = data.count || 0;
+    const tabBadgeGroups = document.getElementById('tab-badge-groups');
+    if (tabBadgeGroups) tabBadgeGroups.textContent = data.count || 0;
     renderGroupsTable(appState.groups);
+    populateBroadcastSelect();
   } catch (err) {
     console.error('Erro ao carregar grupos:', err);
   }
 }
+
+function populateBroadcastSelect() {
+  const select = document.getElementById('broadcast-target-select');
+  if (!select) return;
+  const currentVal = select.value;
+
+  const rules = (appState.mappings?.rules || []).filter(r => r.targetGroupId);
+  const groupMap = new Map();
+
+  for (const r of rules) {
+    groupMap.set(r.targetGroupId, `${r.targetGroupName || r.targetGroupId} (${r.client || 'Regra'})`);
+  }
+  for (const g of (appState.groups || [])) {
+    if (!groupMap.has(g.id)) {
+      groupMap.set(g.id, g.subject);
+    }
+  }
+
+  const optionsHtml = Array.from(groupMap.entries())
+    .sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
+    .map(([id, label]) => `<option value="${escapeHtml(id)}">👥 ${escapeHtml(label)}</option>`)
+    .join('');
+
+  select.innerHTML = `
+    <option value="">Selecione um destino...</option>
+    <option value="ALL_ACTIVE_RULES">📢 Todos os Grupos das Regras Ativas (${rules.filter(r => r.active !== false).length})</option>
+    ${optionsHtml}
+  `;
+
+  if (currentVal && [...select.options].some(o => o.value === currentVal)) {
+    select.value = currentVal;
+  }
+}
+
+document.getElementById('form-quick-broadcast')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const targetVal = document.getElementById('broadcast-target-select')?.value;
+  const messageInput = document.getElementById('broadcast-message-input');
+  const message = messageInput?.value.trim();
+  const btn = document.getElementById('btn-send-broadcast');
+
+  if (!targetVal || !message) {
+    showToast('Selecione o grupo e digite a mensagem.', 'error');
+    return;
+  }
+
+  let groupIds = [];
+  if (targetVal === 'ALL_ACTIVE_RULES') {
+    const activeRules = (appState.mappings?.rules || []).filter(r => r.active !== false && r.targetGroupId);
+    groupIds = [...new Set(activeRules.map(r => r.targetGroupId))];
+    if (groupIds.length === 0) {
+      showToast('Nenhuma regra ativa com grupo configurado.', 'error');
+      return;
+    }
+    if (!confirm(`Confirmar envio deste comunicado para ${groupIds.length} grupo(s) ativo(s)?`)) return;
+  } else {
+    groupIds = [targetVal];
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Enviando...';
+  }
+
+  try {
+    const res = await fetch('/api/whatsapp/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupIds, message })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || 'Comunicado enviado!', 'success');
+      if (messageInput) messageInput.value = '';
+    } else {
+      showToast(data.error || 'Falha ao enviar comunicado.', 'error');
+    }
+  } catch (err) {
+    showToast('Erro de comunicação com o servidor.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '📤 Enviar Comunicado';
+    }
+  }
+});
 
 function renderGroupsTable(groups) {
   if (!groups || groups.length === 0) {
@@ -262,7 +383,7 @@ function renderGroupsTable(groups) {
       </td>
       <td><span class="badge badge-info">${g.participantsCount} membros</span></td>
       <td>
-        <div style="display: flex; gap: 0.5rem;">
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
           <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('${g.id}', 'ID do grupo copiado!')">
             📋 Copiar ID
           </button>
@@ -278,7 +399,6 @@ function renderGroupsTable(groups) {
   `).join('');
 }
 
-// Filtro de grupos
 document.getElementById('search-groups')?.addEventListener('input', (e) => {
   const query = e.target.value.toLowerCase();
   const filtered = appState.groups.filter(g => g.subject.toLowerCase().includes(query) || g.id.toLowerCase().includes(query));
@@ -287,7 +407,9 @@ document.getElementById('search-groups')?.addEventListener('input', (e) => {
 
 document.getElementById('btn-refresh-groups')?.addEventListener('click', () => loadGroups(true));
 
-// 3. Mapeamentos de Regras
+// =========================================================================
+// 3. MAPEAMENTOS DE REGRAS (COM EDIÇÃO RÁPIDA E BOTÃO ATIVAR/PAUSAR)
+// =========================================================================
 async function loadMappings() {
   try {
     const res = await fetch('/api/mappings');
@@ -295,11 +417,12 @@ async function loadMappings() {
     appState.mappings = data;
     if (data.webhookBaseUrl) {
       appState.webhookBaseUrl = data.webhookBaseUrl;
-      if (webhookUrlDisplay) {
-        webhookUrlDisplay.textContent = data.webhookBaseUrl;
-      }
     }
-    renderRulesTable(appState.mappings.rules || []);
+    const rules = appState.mappings.rules || [];
+    const tabBadgeRules = document.getElementById('tab-badge-rules');
+    if (tabBadgeRules) tabBadgeRules.textContent = rules.length;
+    renderRulesTable(rules);
+    populateBroadcastSelect();
   } catch (err) {
     console.error('Erro ao carregar regras:', err);
   }
@@ -348,23 +471,24 @@ function renderRulesTable(rules) {
     const networkName = r.network || (r.matchType === 'matrix' ? 'Todas as Redes' : (r.network || 'Todas as Redes (Geral)'));
     const slug = r.routeSlug || (r.client ? `${slugifyClient(r.client)}${r.network ? '/' + slugifyClient(r.network) : ''}` : '');
     const webhookUrl = slug ? `${base}/${slug}` : base;
+    const isActive = r.active !== false;
 
     return `
-      <tr>
+      <tr style="${!isActive ? 'opacity: 0.65;' : ''}">
         <td>
-          <strong style="color: var(--accent-wa); font-size: 0.95rem;">🏷️ ${escapeHtml(clientName)}</strong>
+          <strong style="color: var(--accent-brand); font-size: 0.95rem;">🏷️ ${escapeHtml(clientName)}</strong>
         </td>
         <td>
-          <span class="badge ${r.network ? 'badge-info' : 'badge-warning'}">
+          <span class="badge ${r.network ? 'badge-info' : 'badge-brand'}">
             🏪 ${escapeHtml(networkName)}
           </span>
         </td>
         <td>
           <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <code style="color: #38bdf8; font-size: 0.78rem; background: rgba(0,0,0,0.35); padding: 0.25rem 0.55rem; border-radius: 6px; word-break: break-all; border: 1px solid rgba(56, 189, 248, 0.25);">
+            <code style="color: var(--accent-blue); font-size: 0.78rem; background: var(--bg-card-inner); padding: 0.28rem 0.55rem; border-radius: 6px; word-break: break-all; border: 1px solid var(--border-color);">
               ${webhookUrl}
             </code>
-            <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('${webhookUrl}', 'URL do Webhook Supabase [${escapeHtml(clientName)} - ${escapeHtml(networkName)}] copiada com sucesso!')" title="Copiar URL para colocar na Umov.me">
+            <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('${webhookUrl}', 'URL do Webhook Supabase [${escapeHtml(clientName)} - ${escapeHtml(networkName)}] copiada com sucesso!')" title="Copiar URL para colocar na uMov.me">
               📋 Copiar
             </button>
           </div>
@@ -374,22 +498,65 @@ function renderRulesTable(rules) {
           <div style="font-size: 0.75rem; color: var(--text-dim);">${r.targetGroupId || '<span style="color:var(--accent-red)">JID pendente</span>'}</div>
         </td>
         <td>
-          <span class="badge ${r.active ? 'badge-success' : 'badge-danger'}">
-            ${r.active ? 'Ativa' : 'Inativa'}
-          </span>
+          <button type="button" class="badge ${isActive ? 'badge-success' : 'badge-warning'}" style="cursor: pointer;" onclick="toggleRuleActive('${escapeHtml(r.id)}', ${!isActive})" title="Clique para Ativar ou Pausar esta regra">
+            ${isActive ? '🟢 Ativa' : '⏸️ Pausada'}
+          </button>
         </td>
         <td>
-          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="openEditRule('${escapeHtml(r.id)}')" title="Editar Cliente, Rede ou Grupo">
+              ✏️ Editar
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="testMappedGroup('${escapeHtml(r.targetGroupId)}', '${escapeHtml(r.targetGroupName || 'Grupo')}', '${escapeHtml(clientName)}', this)" title="Enviar mensagem de teste para este grupo">
               🔔 Testar
             </button>
-            <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')">🗑️ Excluir</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRule('${escapeHtml(r.id)}')" title="Excluir regra">🗑️</button>
           </div>
         </td>
       </tr>
     `;
   }).join('');
 }
+
+window.openEditRule = function(ruleId) {
+  const rule = (appState.mappings?.rules || []).find(r => r.id === ruleId);
+  if (!rule) return;
+  const formCard = document.getElementById('form-new-rule-card');
+  const heading = document.getElementById('form-rule-heading');
+  const saveBtn = document.getElementById('btn-save-rule');
+
+  document.getElementById('rule-edit-id').value = rule.id;
+  document.getElementById('rule-client').value = rule.client || '';
+  document.getElementById('rule-network').value = rule.network || '';
+  document.getElementById('rule-group-id').value = rule.targetGroupId || '';
+  document.getElementById('rule-group-name').value = rule.targetGroupName || '';
+
+  if (heading) heading.textContent = `✏️ Editando Regra: ${rule.client || 'Cliente'} ${rule.network ? '➔ ' + rule.network : ''}`;
+  if (saveBtn) saveBtn.textContent = '💾 Salvar Alterações';
+  if (formCard) {
+    formCard.style.display = 'block';
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  updateRuleUrlPreview();
+};
+
+window.toggleRuleActive = async function(ruleId, newActive) {
+  try {
+    const res = await fetch(`/api/mappings/${encodeURIComponent(ruleId)}/toggle`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: newActive })
+    });
+    if (res.ok) {
+      showToast(newActive ? '🟢 Regra ativada com sucesso!' : '⏸️ Regra pausada temporariamente.', 'info');
+      loadMappings();
+    } else {
+      showToast('Erro ao alterar status da regra.', 'error');
+    }
+  } catch (_) {
+    showToast('Erro de comunicação com o servidor.', 'error');
+  }
+};
 
 window.testMappedGroup = async function(groupId, groupName, clientName, btnEl) {
   if (!groupId) {
@@ -422,21 +589,31 @@ window.testMappedGroup = async function(groupId, groupName, clientName, btnEl) {
   }
 };
 
-// Alternar formulário nova regra
 const formCard = document.getElementById('form-new-rule-card');
-document.getElementById('btn-toggle-add-rule')?.addEventListener('click', () => {
-  formCard.style.display = formCard.style.display === 'none' ? 'block' : 'none';
+function resetRuleFormState() {
+  document.getElementById('form-new-rule')?.reset();
+  const editInput = document.getElementById('rule-edit-id');
+  if (editInput) editInput.value = '';
+  const heading = document.getElementById('form-rule-heading');
+  if (heading) heading.textContent = 'Nova Combinação: Cliente ➔ Rede ➔ Grupo (URL Supabase)';
+  const saveBtn = document.getElementById('btn-save-rule');
+  if (saveBtn) saveBtn.textContent = '💾 Salvar e Gerar Webhook';
   updateRuleUrlPreview();
+}
+
+document.getElementById('btn-toggle-add-rule')?.addEventListener('click', () => {
+  resetRuleFormState();
+  formCard.style.display = formCard.style.display === 'none' ? 'block' : 'none';
 });
 document.getElementById('btn-cancel-rule')?.addEventListener('click', () => {
+  resetRuleFormState();
   formCard.style.display = 'none';
 });
 
-// Modal de webhook gerado
 function showWebhookGeneratedModal({ client, network, groupName, url }) {
   const modal = document.getElementById('modal-webhook-created');
   if (!modal) {
-    showToast(`Webhook gerado no Supabase: ${url}`, 'success');
+    showToast(`Webhook salvo no Supabase: ${url}`, 'success');
     return;
   }
 
@@ -468,6 +645,7 @@ document.getElementById('modal-webhook-created')?.addEventListener('click', (e) 
 
 document.getElementById('form-new-rule')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const editId = document.getElementById('rule-edit-id')?.value.trim() || '';
   const client = document.getElementById('rule-client').value.trim();
   const network = document.getElementById('rule-network').value.trim();
   const targetGroupId = document.getElementById('rule-group-id').value.trim();
@@ -483,28 +661,33 @@ document.getElementById('form-new-rule')?.addEventListener('submit', async (e) =
   };
 
   try {
-    const res = await fetch('/api/mappings', {
-      method: 'POST',
+    const endpoint = editId ? `/api/mappings/${encodeURIComponent(editId)}` : '/api/mappings';
+    const method = editId ? 'PUT' : 'POST';
+
+    const res = await fetch(endpoint, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ruleData)
     });
     const data = await res.json();
     if (res.ok) {
       formCard.style.display = 'none';
-      document.getElementById('form-new-rule').reset();
+      resetRuleFormState();
       loadMappings();
 
       const base = data.webhookBaseUrl || appState.webhookBaseUrl || 'https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook';
       const slug = ruleData.client ? `${slugifyClient(ruleData.client)}${ruleData.network ? '/' + slugifyClient(ruleData.network) : ''}` : '';
       const generatedUrl = data.webhookUrl || (slug ? `${base}/${slug}` : base);
 
-      showWebhookGeneratedModal({
-        client: ruleData.client,
-        network: ruleData.network || 'Todas as Redes (Geral)',
-        groupName: ruleData.targetGroupName,
-        url: generatedUrl
-      });
-      showToast('Nova combinação criada com sucesso no Supabase!', 'success');
+      if (!editId) {
+        showWebhookGeneratedModal({
+          client: ruleData.client,
+          network: ruleData.network || 'Todas as Redes (Geral)',
+          groupName: ruleData.targetGroupName,
+          url: generatedUrl
+        });
+      }
+      showToast(editId ? 'Regra atualizada com sucesso no Supabase!' : 'Nova combinação criada com sucesso no Supabase!', 'success');
     } else {
       showToast(data.error || 'Erro ao salvar regra.', 'error');
     }
@@ -526,6 +709,7 @@ async function deleteRule(id) {
 
 function prefillNewRule(groupId, groupName) {
   document.querySelector('[data-tab=tab-mappings]').click();
+  resetRuleFormState();
   formCard.style.display = 'block';
   document.getElementById('rule-group-id').value = groupId;
   document.getElementById('rule-group-name').value = groupName;
@@ -553,7 +737,9 @@ async function setAsDefaultGroup(groupId, groupName) {
   }
 }
 
-// 4. Feed de Atividades & Histórico de 7 Dias com Filtros
+// =========================================================================
+// 4. KPIS EXECUTIVOS, RANKING DE PRODUTIVIDADE & FEED DE ATIVIDADES
+// =========================================================================
 function getBrazilDayKey(dateObj) {
   try {
     const parts = new Intl.DateTimeFormat('pt-BR', {
@@ -586,11 +772,116 @@ function deriveItemDateKey(item) {
   return '';
 }
 
+function updateExecutiveKpisAndRanking(items) {
+  const all = Array.isArray(items) ? items : [];
+  const todayKey = getBrazilDayKey(new Date()).key;
+
+  const todayItems = all.filter(i => deriveItemDateKey(i) === todayKey);
+  const sentToday = todayItems.filter(i => i.status === 'COMPLETED').length;
+
+  const storesTodaySet = new Set();
+  const storesWeekSet = new Set();
+  let completedTotal = 0;
+  let failedTotal = 0;
+  let totalPhotosWeek = 0;
+  let totalRupturas = 0;
+
+  const promoterMap = new Map();
+  const clientMap = new Map();
+  const storeMap = new Map();
+
+  for (const item of todayItems) {
+    const pdv = (item.pdvName || '').trim();
+    if (pdv && pdv !== 'Loja em Campo') storesTodaySet.add(pdv);
+  }
+
+  for (const item of all) {
+    const pdv = (item.pdvName || 'Loja em Campo').trim();
+    const prom = (item.promoterName || 'Promotor de Campo').trim();
+    const cli = (item.clientName || 'Geral').trim();
+
+    if (pdv && pdv !== 'Loja em Campo') storesWeekSet.add(pdv);
+    if (item.status === 'COMPLETED') completedTotal++;
+    if (item.status === 'FAILED' || item.status === 'IGNORED_NO_GROUP') failedTotal++;
+    totalPhotosWeek += Number(item.photoCount || 0);
+    if (item.hasRuptura) totalRupturas++;
+
+    if (prom) promoterMap.set(prom, (promoterMap.get(prom) || 0) + 1);
+    if (cli) clientMap.set(cli, (clientMap.get(cli) || 0) + 1);
+    if (pdv) storeMap.set(pdv, (storeMap.get(pdv) || 0) + 1);
+  }
+
+  const finishedDenominator = completedTotal + failedTotal;
+  const successRate = finishedDenominator > 0 ? Math.round((completedTotal / finishedDenominator) * 100) : 100;
+
+  // Atualizar os 5 Cards de KPI do Topo
+  const elSentToday = document.getElementById('stat-sent-today');
+  const elActCount = document.getElementById('stat-activities-count');
+  const elStoresToday = document.getElementById('stat-stores-today');
+  const elStoresWeek = document.getElementById('stat-stores-week');
+  const elSuccessRate = document.getElementById('stat-success-rate');
+  const elSuccessBar = document.getElementById('stat-success-bar');
+  const tabBadgeFeed = document.getElementById('tab-badge-feed');
+
+  if (elSentToday) elSentToday.textContent = sentToday;
+  if (elActCount) elActCount.textContent = all.length;
+  if (tabBadgeFeed) tabBadgeFeed.textContent = all.length;
+  if (elStoresToday) elStoresToday.textContent = storesTodaySet.size;
+  if (elStoresWeek) elStoresWeek.textContent = storesWeekSet.size;
+  if (elSuccessRate) {
+    elSuccessRate.textContent = `${successRate}%`;
+    elSuccessRate.style.color = successRate >= 90 ? 'var(--accent-wa)' : successRate >= 70 ? 'var(--accent-amber)' : 'var(--accent-red)';
+  }
+  if (elSuccessBar) {
+    elSuccessBar.style.width = `${successRate}%`;
+  }
+
+  // Atualizar aba de Ranking & Produtividade (7d)
+  const rkPhotos = document.getElementById('rank-kpi-photos');
+  const rkPromoters = document.getElementById('rank-kpi-promoters');
+  const rkClients = document.getElementById('rank-kpi-clients');
+  const rkRupturas = document.getElementById('rank-kpi-rupturas');
+
+  if (rkPhotos) rkPhotos.textContent = totalPhotosWeek;
+  if (rkPromoters) rkPromoters.textContent = promoterMap.size;
+  if (rkClients) rkClients.textContent = clientMap.size;
+  if (rkRupturas) rkRupturas.textContent = totalRupturas;
+
+  const renderBarList = (containerId, mapObj, badgeClass = 'badge-brand') => {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const sorted = Array.from(mapObj.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (sorted.length === 0) {
+      el.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">Sem dados suficientes no período.</p>`;
+      return;
+    }
+    const maxVal = sorted[0][1] || 1;
+    el.innerHTML = sorted.map(([name, count], idx) => {
+      const pct = Math.max(8, Math.round((count / maxVal) * 100));
+      const medal = idx === 0 ? '🥇 ' : idx === 1 ? '🥈 ' : idx === 2 ? '🥉 ' : `${idx + 1}. `;
+      return `
+        <div class="ranking-row">
+          <div class="ranking-row-header">
+            <span style="color: var(--text-main);">${medal}${escapeHtml(name)}</span>
+            <span class="badge ${badgeClass}">${count} exec.</span>
+          </div>
+          <div class="ranking-bar-bg">
+            <div class="ranking-bar-fill" style="width: ${pct}%;"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  };
+
+  renderBarList('ranking-promoters-list', promoterMap, 'badge-brand');
+  renderBarList('ranking-clients-list', clientMap, 'badge-success');
+  renderBarList('ranking-stores-list', storeMap, 'badge-info');
+}
+
 function populateFeedFilterOptions(items) {
   const daySelect = document.getElementById('feed-filter-day');
   const promoterSelect = document.getElementById('feed-filter-promoter');
 
-  // 1. Popular últimos 7 dias
   if (daySelect) {
     const currentDayVal = daySelect.value || 'ALL';
     const dayCounts = {};
@@ -624,7 +915,6 @@ function populateFeedFilterOptions(items) {
     }
   }
 
-  // 2. Popular promotores únicos (filtrados pelo dia selecionado, se houver)
   if (promoterSelect) {
     const currentPromoterVal = promoterSelect.value || 'ALL';
     const selectedDay = daySelect ? daySelect.value : 'ALL';
@@ -658,7 +948,6 @@ function applyFeedFiltersAndRender() {
   const statusVal = document.getElementById('feed-filter-status')?.value || 'ALL';
   const searchVal = (document.getElementById('feed-filter-search')?.value || '').trim().toLowerCase();
 
-  // Filtrar primeiro por Dia, Promotor e Busca para calcular os contadores de Enviados vs Pendentes daquele recorte
   const baseFiltered = allItems.filter(item => {
     if (dayVal !== 'ALL' && deriveItemDateKey(item) !== dayVal) return false;
     if (promoterVal !== 'ALL' && (item.promoterName || '').trim() !== promoterVal) return false;
@@ -672,31 +961,34 @@ function applyFeedFiltersAndRender() {
   let sentCount = 0;
   let pendingCount = 0;
   let failedCount = 0;
+  let rupturaCount = 0;
 
   for (const item of baseFiltered) {
     if (item.status === 'COMPLETED') sentCount++;
     else if (item.status === 'QUEUED' || item.status === 'PROCESSING') pendingCount++;
     else failedCount++;
+    if (item.hasRuptura) rupturaCount++;
   }
 
-  // Filtrar pelo Status selecionado
   const finalItems = baseFiltered.filter(item => {
     if (statusVal === 'SENT') return item.status === 'COMPLETED';
     if (statusVal === 'PENDING') return item.status === 'QUEUED' || item.status === 'PROCESSING';
     if (statusVal === 'FAILED') return item.status === 'FAILED' || item.status === 'IGNORED_NO_GROUP';
+    if (statusVal === 'RUPTURA') return Boolean(item.hasRuptura);
     return true;
   });
 
-  // Atualizar contadores no topo do Feed
   const elTotal = document.getElementById('count-feed-total');
   const elSent = document.getElementById('count-feed-sent');
   const elPending = document.getElementById('count-feed-pending');
   const elFailed = document.getElementById('count-feed-failed');
+  const elRuptura = document.getElementById('count-feed-ruptura');
 
   if (elTotal) elTotal.textContent = finalItems.length;
   if (elSent) elSent.textContent = sentCount;
   if (elPending) elPending.textContent = pendingCount;
   if (elFailed) elFailed.textContent = failedCount;
+  if (elRuptura) elRuptura.textContent = rupturaCount;
 
   appState.filteredHistory = finalItems;
   renderActivityFeed(finalItems);
@@ -706,12 +998,23 @@ async function loadHistory() {
   try {
     const res = await fetch('/api/history?limit=1000');
     appState.history = await res.json();
-    statActivitiesCount.textContent = appState.history.length;
+    updateExecutiveKpisAndRanking(appState.history);
     populateFeedFilterOptions(appState.history);
     applyFeedFiltersAndRender();
   } catch (err) {
     console.error('Erro ao carregar histórico:', err);
   }
+}
+
+function formatPhotoShortTag(label, idx, total) {
+  const lower = String(label || '').toLowerCase();
+  if (lower.includes('antes')) return 'ANTES';
+  if (lower.includes('extra')) return 'P. EXTRA';
+  if (lower.includes('backlight')) return 'BACKLIGHT';
+  if (lower.includes('mix')) return 'MIX';
+  if (lower.includes('depois')) return 'DEPOIS';
+  if (idx === 0) return 'ANTES';
+  return `FOTO ${idx + 1}`;
 }
 
 function renderActivityFeed(items) {
@@ -724,40 +1027,62 @@ function renderActivityFeed(items) {
     return;
   }
 
-  activityFeedList.innerHTML = items.map(item => {
+  activityFeedList.innerHTML = items.map((item, itemIdx) => {
     let statusBadge = '<span class="badge badge-warning">⏳ Pendente / Na Fila</span>';
     if (item.status === 'COMPLETED') statusBadge = '<span class="badge badge-success">✅ Enviado no WhatsApp</span>';
     if (item.status === 'PROCESSING') statusBadge = '<span class="badge badge-info">📤 Enviando Fotos Agora...</span>';
     if (item.status === 'FAILED') statusBadge = '<span class="badge badge-danger">❌ Falha no Envio</span>';
     if (item.status === 'IGNORED_NO_GROUP') statusBadge = '<span class="badge badge-warning">⚠️ Sem Grupo Mapeado</span>';
 
+    const rupturaBadge = item.hasRuptura
+      ? `<span class="badge badge-ruptura" title="Ruptura reportada: ${escapeHtml(item.rupturaText || 'Sim')}">🚨 ALERTA DE RUPTURA: ${escapeHtml(item.rupturaText || 'Sim')}</span>`
+      : '';
+
     const targetId = item.id || item.activityId;
     let retryBtnHtml = '';
     if (item.status === 'FAILED' || item.status === 'IGNORED_NO_GROUP') {
       retryBtnHtml = `
-        <button type="button" class="btn btn-primary btn-sm" onclick="retrySingleActivity('${escapeHtml(String(targetId))}', this)" style="padding: 0.28rem 0.65rem; font-size: 0.76rem; border-radius: 7px;">
+        <button type="button" class="btn btn-primary btn-sm" onclick="retrySingleActivity('${escapeHtml(String(targetId))}', this)">
           🔄 Reenviar Agora
         </button>
       `;
     } else if (item.status === 'QUEUED') {
       retryBtnHtml = `
-        <button type="button" class="btn btn-secondary btn-sm" onclick="retrySingleActivity('${escapeHtml(String(targetId))}', this)" title="Forçar reenvio imediato" style="padding: 0.25rem 0.55rem; font-size: 0.74rem; border-radius: 7px;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="retrySingleActivity('${escapeHtml(String(targetId))}', this)" title="Forçar disparo imediato">
           ⚡ Disparar
         </button>
       `;
     }
 
     const clientTag = item.clientName
-      ? `<span class="badge badge-info" style="margin-right: 0.4rem;">🏷️ ${escapeHtml(item.clientName)}</span>`
+      ? `<span class="badge badge-brand" style="margin-right: 0.4rem;">🏷️ ${escapeHtml(item.clientName)}</span>`
       : '';
 
+    // Renderizar Galeria de Miniaturas das Fotos (se disponível)
+    const photos = Array.isArray(item.photos) ? item.photos : [];
+    let photosStripHtml = '';
+    if (photos.length > 0) {
+      const thumbs = photos.map((p, pIdx) => {
+        const url = typeof p === 'object' ? p.url : p;
+        const tag = formatPhotoShortTag(typeof p === 'object' ? p.label : '', pIdx, photos.length);
+        return `
+          <div class="activity-thumb-card" onclick="openPhotoLightbox(${itemIdx}, ${pIdx})" title="Clique para ampliar (${tag})">
+            <img src="${escapeHtml(url)}" loading="lazy" alt="${escapeHtml(tag)}">
+            <span class="activity-thumb-tag">${escapeHtml(tag)}</span>
+          </div>
+        `;
+      }).join('');
+      photosStripHtml = `<div class="activity-photos-strip">${thumbs}</div>`;
+    }
+
     return `
-      <div class="activity-item">
+      <div class="activity-item ${item.hasRuptura ? 'has-ruptura' : ''}">
         <div class="activity-avatar">${item.status === 'COMPLETED' ? '✅' : item.status === 'PROCESSING' ? '📤' : item.status === 'FAILED' ? '❌' : '📸'}</div>
         <div class="activity-details">
           <div class="activity-header-line" style="flex-wrap: wrap; gap: 0.5rem;">
             <span class="activity-title-text">${clientTag}${escapeHtml(item.pdvName || 'PDV')} &bull; ${escapeHtml(item.activityName || 'Atividade')}</span>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+              ${rupturaBadge}
               ${statusBadge}
               ${retryBtnHtml}
             </div>
@@ -765,15 +1090,91 @@ function renderActivityFeed(items) {
           <div class="activity-meta">
             <span>👤 Promotor: <strong>${escapeHtml(item.promoterName || 'N/A')}</strong></span>
             <span>📅 ${escapeHtml(item.date || '')}</span>
-            <span>🖼️ ${item.photoCount || 0} fotos</span>
+            <span>🖼️ <strong>${item.photoCount || 0}</strong> fotos ${photos.length > 0 ? `<a href="javascript:void(0)" onclick="openPhotoLightbox(${itemIdx}, 0)" style="color: var(--accent-brand); font-weight: 700; margin-left: 0.25rem;">(Ampliar 🔍)</a>` : ''}</span>
             <span>🎯 Grupos: <em>${escapeHtml((item.targetGroups || []).join(', '))}</em></span>
           </div>
-          ${item.error ? `<div style="color: var(--accent-red); font-size: 0.8rem; margin-top: 0.4rem;">Erro: ${escapeHtml(item.error)}</div>` : ''}
+          ${photosStripHtml}
+          ${item.error ? `<div style="color: var(--accent-red); font-size: 0.8rem; margin-top: 0.45rem;">⚠️ Erro: ${escapeHtml(item.error)}</div>` : ''}
         </div>
       </div>
     `;
   }).join('');
 }
+
+// =========================================================================
+// 4.5. LIGHTBOX DE FOTOS EM TELA CHEIA
+// =========================================================================
+window.openPhotoLightbox = function(itemIndex, photoIndex = 0) {
+  const list = appState.filteredHistory || appState.history || [];
+  const item = list[itemIndex];
+  if (!item || !Array.isArray(item.photos) || item.photos.length === 0) return;
+
+  appState.lightbox = {
+    photos: item.photos,
+    currentIndex: photoIndex,
+    title: `${item.clientName ? item.clientName + ' • ' : ''}${item.pdvName || 'Loja'}`,
+    subtitle: `Promotor: ${item.promoterName || '-'} • Data: ${item.date || '-'}`
+  };
+
+  renderLightboxSlide();
+  const modal = document.getElementById('modal-photo-lightbox');
+  if (modal) modal.style.display = 'flex';
+};
+
+function renderLightboxSlide() {
+  const lb = appState.lightbox;
+  if (!lb.photos || lb.photos.length === 0) return;
+
+  const total = lb.photos.length;
+  const idx = ((lb.currentIndex % total) + total) % total;
+  lb.currentIndex = idx;
+
+  const photoObj = lb.photos[idx];
+  const url = typeof photoObj === 'object' ? photoObj.url : photoObj;
+  const label = formatPhotoShortTag(typeof photoObj === 'object' ? photoObj.label : '', idx, total);
+
+  document.getElementById('lightbox-title').textContent = lb.title;
+  document.getElementById('lightbox-subtitle').textContent = lb.subtitle;
+  document.getElementById('lightbox-counter').textContent = `${idx + 1} / ${total}`;
+  document.getElementById('lightbox-image').src = url;
+  document.getElementById('lightbox-open-original').href = url;
+  document.getElementById('lightbox-caption').textContent = `📸 FOTO ${idx + 1}: ${label}`;
+}
+
+document.getElementById('btn-lightbox-prev')?.addEventListener('click', () => {
+  appState.lightbox.currentIndex--;
+  renderLightboxSlide();
+});
+
+document.getElementById('btn-lightbox-next')?.addEventListener('click', () => {
+  appState.lightbox.currentIndex++;
+  renderLightboxSlide();
+});
+
+document.getElementById('btn-close-lightbox')?.addEventListener('click', () => {
+  const modal = document.getElementById('modal-photo-lightbox');
+  if (modal) modal.style.display = 'none';
+});
+
+document.getElementById('modal-photo-lightbox')?.addEventListener('click', (e) => {
+  if (e.target.id === 'modal-photo-lightbox') {
+    e.target.style.display = 'none';
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('modal-photo-lightbox');
+  if (!modal || modal.style.display === 'none') return;
+  if (e.key === 'ArrowLeft') {
+    appState.lightbox.currentIndex--;
+    renderLightboxSlide();
+  } else if (e.key === 'ArrowRight') {
+    appState.lightbox.currentIndex++;
+    renderLightboxSlide();
+  } else if (e.key === 'Escape') {
+    modal.style.display = 'none';
+  }
+});
 
 window.retrySingleActivity = async function(id, btnEl) {
   if (btnEl) {
@@ -865,6 +1266,10 @@ document.getElementById('pill-filter-failed')?.addEventListener('click', () => {
   const statEl = document.getElementById('feed-filter-status');
   if (statEl) { statEl.value = 'FAILED'; applyFeedFiltersAndRender(); }
 });
+document.getElementById('pill-filter-ruptura')?.addEventListener('click', () => {
+  const statEl = document.getElementById('feed-filter-status');
+  if (statEl) { statEl.value = 'RUPTURA'; applyFeedFiltersAndRender(); }
+});
 
 // Exportar Histórico Filtrado para Planilha Excel (CSV UTF-8 com BOM)
 document.getElementById('btn-export-feed-csv')?.addEventListener('click', () => {
@@ -874,7 +1279,7 @@ document.getElementById('btn-export-feed-csv')?.addEventListener('click', () => 
     return;
   }
 
-  const headers = ['Data/Hora', 'Cliente/Marca', 'Rede', 'Loja/PDV', 'Promotor', 'Tipo de Atividade', 'Qtd Fotos', 'Grupos WhatsApp', 'Status', 'Erro'];
+  const headers = ['Data/Hora', 'Cliente/Marca', 'Rede', 'Loja/PDV', 'Promotor', 'Tipo de Atividade', 'Qtd Fotos', 'Ruptura', 'Grupos WhatsApp', 'Status', 'Erro'];
   const statusLabels = {
     COMPLETED: 'Enviado',
     QUEUED: 'Na Fila',
@@ -896,6 +1301,7 @@ document.getElementById('btn-export-feed-csv')?.addEventListener('click', () => 
     escapeCsv(i.promoterName || ''),
     escapeCsv(i.activityName || ''),
     escapeCsv(i.photoCount || 0),
+    escapeCsv(i.hasRuptura ? (i.rupturaText || 'Sim') : 'Não'),
     escapeCsv((i.targetGroups || []).join(' | ')),
     escapeCsv(statusLabels[i.status] || i.status || ''),
     escapeCsv(i.error || '')
@@ -907,7 +1313,7 @@ document.getElementById('btn-export-feed-csv')?.addEventListener('click', () => 
   const a = document.createElement('a');
   const dayVal = document.getElementById('feed-filter-day')?.value || '7dias';
   a.href = url;
-  a.download = `relatorio-trade-hub-${dayVal.toLowerCase()}.csv`;
+  a.download = `relatorio-objetiva-trade-${dayVal.toLowerCase()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -915,7 +1321,9 @@ document.getElementById('btn-export-feed-csv')?.addEventListener('click', () => 
   showToast(`Planilha exportada com ${items.length} registro(s)!`, 'success');
 });
 
-// 6. Configurações da Fila Anti-Ban
+// =========================================================================
+// 5. CONFIGURAÇÕES DA FILA ANTI-BAN & CONTROLE PAUSAR/RETOMAR FILA
+// =========================================================================
 async function loadSettings() {
   try {
     const res = await fetch('/api/settings');
@@ -975,22 +1383,71 @@ document.getElementById('form-settings')?.addEventListener('submit', async (e) =
   }
 });
 
-// Fila polling & Monitor de Disparo Ao Vivo
+// Botão Pausar / Retomar Fila
+document.getElementById('btn-toggle-queue-pause')?.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/queue/toggle-pause', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message, data.isPaused ? 'info' : 'success');
+      checkQueue();
+    }
+  } catch (_) {
+    showToast('Erro ao alternar pausa da fila.', 'error');
+  }
+});
+
 async function checkQueue() {
   try {
     const res = await fetch('/api/queue');
     const data = await res.json();
     appState.queue = data;
-    statQueueCount.textContent = `${data.pendingCount} pendente(s)`;
-    if (data.isProcessing) {
-      statQueueCount.style.color = 'var(--accent-amber)';
-    } else {
-      statQueueCount.style.color = 'var(--text-main)';
+
+    if (statQueueCount) {
+      statQueueCount.textContent = data.isPaused
+        ? `⏸️ Pausada (${data.pendingCount})`
+        : `${data.pendingCount} pendente(s)`;
+      statQueueCount.style.color = data.isPaused
+        ? 'var(--accent-red)'
+        : data.isProcessing
+          ? 'var(--accent-brand)'
+          : 'var(--text-main)';
+    }
+
+    const pauseBtn = document.getElementById('btn-toggle-queue-pause');
+    if (pauseBtn) {
+      if (data.isPaused) {
+        pauseBtn.className = 'btn btn-primary btn-sm';
+        pauseBtn.innerHTML = '▶️ Retomar Fila';
+      } else {
+        pauseBtn.className = 'btn btn-secondary btn-sm';
+        pauseBtn.innerHTML = '⏸️ Pausar Fila';
+      }
     }
 
     const monitorEl = document.getElementById('live-dispatch-monitor');
     const badgeEl = document.getElementById('live-monitor-badge');
     if (!monitorEl) return;
+
+    if (data.isPaused) {
+      if (badgeEl) {
+        badgeEl.className = 'badge badge-danger';
+        badgeEl.textContent = '⏸️ Fila Pausada Manualmente';
+      }
+      monitorEl.innerHTML = `
+        <div class="inner-panel" style="margin-bottom: 0; border-color: rgba(239, 68, 68, 0.4);">
+          <strong style="color: var(--accent-red);">⏸️ Os disparos para os grupos estão pausados temporariamente.</strong>
+          <p style="font-size: 0.84rem; color: var(--text-muted); margin-top: 0.3rem;">
+            Novas atividades enviadas pela uMov.me continuam sendo guardadas com segurança (${data.pendingCount} aguardando). Clique em <strong>▶️ Retomar Fila</strong> acima para liberar o envio.
+          </p>
+        </div>
+      `;
+      return;
+    }
 
     if (data.isProcessing && data.currentItem) {
       const c = data.currentItem;
@@ -999,26 +1456,26 @@ async function checkQueue() {
       const pct = total > 0 ? Math.min(100, Math.round((currentPhoto / total) * 100)) : 50;
 
       if (badgeEl) {
-        badgeEl.className = 'badge badge-warning';
+        badgeEl.className = 'badge badge-brand';
         badgeEl.textContent = '📤 Disparando Agora...';
       }
 
       monitorEl.innerHTML = `
-        <div style="background: rgba(37, 211, 102, 0.08); border: 1px solid rgba(37, 211, 102, 0.3); border-radius: 12px; padding: 1rem;">
+        <div class="inner-panel" style="margin-bottom: 0; border-color: var(--border-glow);">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.6rem;">
             <div>
               <strong style="color: var(--text-main); font-size: 0.95rem;">🏪 ${escapeHtml(c.pdv || 'Loja em Campo')}</strong>
-              ${c.client ? `<span class="badge badge-info" style="margin-left: 0.5rem;">${escapeHtml(c.client)}</span>` : ''}
+              ${c.client ? `<span class="badge badge-brand" style="margin-left: 0.5rem;">${escapeHtml(c.client)}</span>` : ''}
             </div>
-            <span style="font-size: 0.82rem; color: #4ade80; font-weight: 600;">
+            <span style="font-size: 0.82rem; color: var(--accent-wa); font-weight: 700;">
               ${currentPhoto > 0 ? `📸 Enviando foto ${currentPhoto} de ${total}` : '📝 Enviando card de resumo...'}
             </span>
           </div>
           <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.7rem;">
             👤 Promotor: <strong>${escapeHtml(c.promoter || '-')}</strong> &bull; 🎯 Grupo: <strong>${escapeHtml(c.groupName || '-')}</strong>
           </div>
-          <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
-            <div style="width: ${pct}%; height: 100%; background: linear-gradient(90deg, #25d366, #38bdf8); transition: width 0.4s ease;"></div>
+          <div class="kpi-progress-bar" style="height: 8px;">
+            <div class="kpi-progress-fill" style="width: ${pct}%;"></div>
           </div>
           ${data.pendingCount > 0 ? `<div style="font-size: 0.76rem; color: var(--text-dim); margin-top: 0.55rem;">⏳ +${data.pendingCount} atividade(s) aguardando na fila anti-ban</div>` : ''}
         </div>
@@ -1046,11 +1503,6 @@ function copyToClipboard(text, successMsg = 'Copiado para a área de transferên
   });
 }
 
-document.getElementById('btn-copy-webhook')?.addEventListener('click', () => {
-  const url = document.getElementById('webhook-url-display').textContent;
-  copyToClipboard(url, 'URL do Webhook copiada!');
-});
-
 document.getElementById('btn-refresh-all')?.addEventListener('click', () => {
   checkWhatsAppStatus();
   loadGroups(true);
@@ -1070,59 +1522,23 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// -------------------------------------------------------------
+// =========================================================================
 // 7. AMBIENTE DE LOGIN E SENHA INTERATIVO (CONECTADO AO SUPABASE)
-// -------------------------------------------------------------
+// =========================================================================
 const authOverlay = document.getElementById('auth-overlay');
 const authAlertBox = document.getElementById('auth-alert-box');
 const formAuthLogin = document.getElementById('form-auth-login');
 const formAuthRegister = document.getElementById('form-auth-register');
 const btnModeLogin = document.getElementById('btn-auth-mode-login');
 const btnModeRegister = document.getElementById('btn-auth-mode-register');
-let cachedUsuariosSql = '';
-
-// Preenchimento rápido de usuário em 1 clique
-window.quickFillLogin = function(username) {
-  hideAuthAlert();
-  const emailInput = document.getElementById('login-email');
-  const passInput = document.getElementById('login-password');
-  if (emailInput) emailInput.value = username;
-  if (passInput) passInput.focus();
-};
-
-// Botão Mostrar/Ocultar senha no Login
-document.getElementById('btn-toggle-login-pass')?.addEventListener('click', (e) => {
-  const input = document.getElementById('login-password');
-  if (!input) return;
-  if (input.type === 'password') {
-    input.type = 'text';
-    e.currentTarget.textContent = '🙈';
-  } else {
-    input.type = 'password';
-    e.currentTarget.textContent = '👁️';
-  }
-});
-
-// Botão Mostrar/Ocultar senha no Cadastro
-document.getElementById('btn-toggle-register-pass')?.addEventListener('click', (e) => {
-  const input = document.getElementById('register-password');
-  if (!input) return;
-  if (input.type === 'password') {
-    input.type = 'text';
-    e.currentTarget.textContent = '🙈';
-  } else {
-    input.type = 'password';
-    e.currentTarget.textContent = '👁️';
-  }
-});
 
 function showAuthAlert(msg, type = 'error') {
   if (!authAlertBox) return;
   authAlertBox.style.display = 'block';
   if (type === 'success') {
-    authAlertBox.style.background = 'rgba(34, 197, 94, 0.15)';
-    authAlertBox.style.border = '1px solid rgba(34, 197, 94, 0.45)';
-    authAlertBox.style.color = '#4ade80';
+    authAlertBox.style.background = 'rgba(16, 185, 129, 0.15)';
+    authAlertBox.style.border = '1px solid rgba(16, 185, 129, 0.45)';
+    authAlertBox.style.color = '#34d399';
   } else {
     authAlertBox.style.background = 'rgba(239, 68, 68, 0.15)';
     authAlertBox.style.border = '1px solid rgba(239, 68, 68, 0.45)';
@@ -1170,6 +1586,7 @@ function startDashboardAll() {
   checkWhatsAppStatus();
   loadSettings();
   loadMappings();
+  loadGroups(false);
   loadHistory();
   checkQueue();
 }
@@ -1253,7 +1670,6 @@ document.getElementById('btn-logout-system')?.addEventListener('click', () => {
 
 function updateSupabaseAuthBadges(data) {
   if (!data) return;
-  if (data.sqlScript) cachedUsuariosSql = data.sqlScript;
 
   const loginBadgeText = document.getElementById('auth-supabase-status-text');
   if (loginBadgeText) {
@@ -1267,39 +1683,16 @@ function updateSupabaseAuthBadges(data) {
   }
 
   const tabBadge = document.getElementById('users-supabase-table-badge');
-  const sqlTitle = document.getElementById('supabase-sql-title');
-  const sqlDesc = document.getElementById('supabase-sql-desc');
-  const sqlPreview = document.getElementById('usuarios-sql-preview');
-
-  if (sqlPreview && cachedUsuariosSql) {
-    sqlPreview.textContent = cachedUsuariosSql;
-  }
-
   if (tabBadge) {
     if (data.usuariosTableExists) {
       tabBadge.className = 'badge badge-success';
       tabBadge.textContent = '🟢 Tabela public.usuarios Ativa no Supabase';
-      if (sqlTitle) sqlTitle.innerHTML = '✅ Tabela <code>public.usuarios</code> conectada e sincronizada no Supabase!';
-      if (sqlDesc) sqlDesc.innerHTML = 'Todos os usuários e senhas abaixo estão gravados diretamente na tabela <code>public.usuarios</code> do seu Supabase.';
     } else {
       tabBadge.className = 'badge badge-warning';
       tabBadge.textContent = '⚠️ Falta rodar o SQL da tabela public.usuarios no Supabase';
     }
   }
 }
-
-document.getElementById('btn-copy-usuarios-sql')?.addEventListener('click', () => {
-  if (!cachedUsuariosSql) return;
-  navigator.clipboard.writeText(cachedUsuariosSql).then(() => {
-    showToast('SQL copiado! Cole no SQL Editor do Supabase e clique em Run.', 'success');
-  });
-});
-
-document.getElementById('btn-toggle-usuarios-sql')?.addEventListener('click', () => {
-  const pre = document.getElementById('usuarios-sql-preview');
-  if (!pre) return;
-  pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
-});
 
 // Gerenciamento de Usuários na aba "Usuários & Acessos"
 async function loadUsers() {
@@ -1328,8 +1721,8 @@ function renderUsersTable(users) {
     if (u.status === 'BLOCKED') statusBadge = '<span class="badge badge-danger">🚫 Bloqueado</span>';
 
     const roleBadge = u.role === 'admin'
-      ? '<span class="badge badge-info">👑 Admin</span>'
-      : '<span class="badge badge-secondary" style="background: rgba(255,255,255,0.08);">👤 Operador</span>';
+      ? '<span class="badge badge-brand">👑 Admin</span>'
+      : '<span class="badge badge-info">👤 Operador</span>';
 
     const lastLogin = u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString('pt-BR') : 'Nunca acessou';
     const username = u.username || u.email.split('@')[0];
@@ -1338,7 +1731,7 @@ function renderUsersTable(users) {
 
     let actionsHtml = '';
     if (u.isMaster) {
-      actionsHtml = `<div style="display: flex; gap: 0.4rem; align-items: center;">${changePassBtn}<span style="font-size: 0.75rem; color: var(--accent-wa);">🔒 Principal</span></div>`;
+      actionsHtml = `<div style="display: flex; gap: 0.4rem; align-items: center;">${changePassBtn}<span style="font-size: 0.75rem; color: var(--accent-brand); font-weight: 600;">🔒 Principal</span></div>`;
     } else {
       const approveBtn = u.status !== 'APPROVED'
         ? `<button class="btn btn-primary btn-sm" onclick="changeUserStatus('${escapeHtml(u.email)}', 'APPROVED')">✅ Ativar</button>`
@@ -1350,8 +1743,8 @@ function renderUsersTable(users) {
     return `
       <tr>
         <td><strong>${escapeHtml(u.name || '-')}</strong></td>
-        <td><code style="color: #4ade80; font-weight: 600;">${escapeHtml(username)}</code></td>
-        <td><code style="color: #38bdf8;">${escapeHtml(u.email)}</code></td>
+        <td><code style="color: var(--accent-brand); font-weight: 700;">${escapeHtml(username)}</code></td>
+        <td><code style="color: var(--accent-blue);">${escapeHtml(u.email)}</code></td>
         <td>${roleBadge}</td>
         <td>${statusBadge}</td>
         <td style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(lastLogin)}</td>

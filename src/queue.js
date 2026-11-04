@@ -15,7 +15,17 @@ class DispatchQueue {
   constructor() {
     this.queue = [];
     this.isProcessing = false;
+    this.isPaused = false;
     this.currentItem = null;
+  }
+
+  setPaused(paused) {
+    this.isPaused = Boolean(paused);
+    console.log(`[Fila] Estado da fila alterado para: ${this.isPaused ? '⏸️ PAUSADA' : '▶️ ATIVA'}`);
+    if (!this.isPaused) {
+      this.processNext();
+    }
+    return this.isPaused;
   }
 
   /**
@@ -74,7 +84,7 @@ class DispatchQueue {
   }
 
   async processNext() {
-    if (this.isProcessing || this.queue.length === 0) {
+    if (this.isPaused || this.isProcessing || this.queue.length === 0) {
       return;
     }
 
@@ -185,6 +195,7 @@ class DispatchQueue {
   getQueueStatus() {
     return {
       isProcessing: this.isProcessing,
+      isPaused: this.isPaused,
       pendingCount: this.queue.length,
       currentItem: this.currentItem ? {
         id: this.currentItem.id,

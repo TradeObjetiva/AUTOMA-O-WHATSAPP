@@ -58,9 +58,23 @@ class Storage {
 
   static addRule(rule) {
     const data = this.getMappings();
-    data.rules.push(rule);
+    const idx = data.rules.findIndex(r => r.id === rule.id);
+    if (idx >= 0) {
+      data.rules[idx] = { ...data.rules[idx], ...rule };
+    } else {
+      data.rules.push(rule);
+    }
     writeJSON(MAPPINGS_FILE, data);
     return data;
+  }
+
+  static updateRule(ruleId, patch) {
+    const data = this.getMappings();
+    const idx = data.rules.findIndex(r => r.id === ruleId);
+    if (idx === -1) return null;
+    data.rules[idx] = { ...data.rules[idx], ...patch };
+    writeJSON(MAPPINGS_FILE, data);
+    return { rule: data.rules[idx], mappings: data };
   }
 
   static deleteRule(ruleId) {

@@ -281,6 +281,31 @@ app.post('/api/whatsapp/test-group', async (req, res) => {
   }
 });
 
+app.post('/api/whatsapp/broadcast', async (req, res) => {
+  try {
+    const { groupIds, message } = req.body;
+    const text = String(message || '').trim();
+    if (!text) {
+      return res.status(400).json({ error: 'Digite uma mensagem para enviar.' });
+    }
+    const targets = Array.isArray(groupIds) ? groupIds.filter(Boolean) : [];
+    if (targets.length === 0) {
+      return res.status(400).json({ error: 'Selecione pelo menos um grupo de destino.' });
+    }
+    let sent = 0;
+    for (const gid of targets) {
+      await whatsappManager.sendTextMessage(gid, text);
+      sent++;
+      if (targets.length > 1) {
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+    res.json({ success: true, sent, message: `Comunicado enviado com sucesso para ${sent} grupo(s)!` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 3. ENDPOINTS DE MAPEAMENTOS E REGRAS (CLIENTES E REDES)
 // -------------------------------------------------------------
@@ -350,6 +375,60 @@ app.post('/api/mappings', async (req, res) => {
   });
 });
 
+app.put('/api/mappings/:id', async (req, res) => {
+  try {
+    const ruleId = req.params.id;
+    const { name, client, network, targetGroupId, targetGroupName, active } = req.body;
+    if (!targetGroupId) {
+      return res.status(400).json({ error: 'ID do grupo WhatsApp é obrigatório.' });
+    }
+
+    const slugify = (text) => (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const clientClean = (client || '').trim();
+    const networkClean = (network || '').trim();
+    const routeSlug = clientClean ? `${slugify(clientClean)}${networkClean ? '/' + slugify(networkClean) : ''}` : '';
+
+    const patch = {
+      name: name || (clientClean && networkClean ? `${clientClean} - Rede ${networkClean}` : `${clientClean || 'Regra'} - Geral`),
+      client: clientClean,
+      network: networkClean,
+      routeSlug,
+      matchType: clientClean && networkClean ? 'matrix' : 'pdv_contains',
+      matchValue: networkClean || clientClean,
+      targetGroupId: targetGroupId.trim(),
+      targetGroupName: (targetGroupName || targetGroupId).trim(),
+      active: active !== false
+    };
+
+    const result = Storage.updateRule(ruleId, patch);
+    if (!result) {
+      return res.status(404).json({ error: 'Regra não encontrada.' });
+    }
+
+    await supabaseWorker.addRule(result.rule);
+    res.json({ success: true, rule: result.rule, mappings: result.mappings });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch('/api/mappings/:id/toggle', async (req, res) => {
+  try {
+    const ruleId = req.params.id;
+    const mappings = Storage.getMappings();
+    const existing = (mappings.rules || []).find(r => r.id === ruleId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Regra não encontrada.' });
+    }
+    const newActive = req.body.active !== undefined ? Boolean(req.body.active) : !existing.active;
+    const result = Storage.updateRule(ruleId, { active: newActive });
+    await supabaseWorker.addRule(result.rule);
+    res.json({ success: true, rule: result.rule, mappings: result.mappings });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.delete('/api/mappings/:id', async (req, res) => {
   const updated = Storage.deleteRule(req.params.id);
   await supabaseWorker.deleteRule(req.params.id);
@@ -370,6 +449,17 @@ app.post('/api/settings', (req, res) => {
 
 app.get('/api/queue', (req, res) => {
   res.json(dispatchQueue.getQueueStatus());
+});
+
+app.post('/api/queue/toggle-pause', (req, res) => {
+  const desired = req.body.paused !== undefined ? Boolean(req.body.paused) : !dispatchQueue.isPaused;
+  const isPaused = dispatchQueue.setPaused(desired);
+  res.json({
+    success: true,
+    isPaused,
+    status: dispatchQueue.getQueueStatus(),
+    message: isPaused ? '⏸️ Fila de disparos pausada temporariamente.' : '▶️ Fila de disparos retomada!'
+  });
 });
 
 app.get('/api/history', async (req, res) => {
