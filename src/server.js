@@ -71,8 +71,11 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.get(['/health', '/api/status', '/healthz'], (req, res) => {
   res.json({
     status: 'ok',
+    version: '1.0.5',
     uptime: Math.round(process.uptime()),
     whatsapp: whatsappManager.status,
+    supabaseActive: supabaseWorker.enabled,
+    supabaseError: supabaseWorker.lastError || null,
     timestamp: new Date().toISOString()
   });
 });
@@ -194,13 +197,17 @@ app.get('/api/whatsapp/groups', async (req, res) => {
 // 3. ENDPOINTS DE MAPEAMENTOS E REGRAS (CLIENTES E REDES)
 // -------------------------------------------------------------
 app.get('/api/mappings', (req, res) => {
+  if (!supabaseWorker.enabled) {
+    supabaseWorker.init();
+  }
   const mappings = Storage.getMappings();
   const webhookBaseUrl = supabaseWorker.getWebhookBaseUrl();
   res.json({
     rules: mappings.rules || [],
     webhookBaseUrl,
     supabaseUrl: process.env.SUPABASE_URL || 'https://vuvchcevhezkxhmlxgrz.supabase.co',
-    isSupabaseActive: supabaseWorker.enabled
+    isSupabaseActive: supabaseWorker.enabled,
+    supabaseError: supabaseWorker.lastError || null
   });
 });
 
@@ -359,9 +366,11 @@ app.listen(PORT, async () => {
   console.log(`⚡ Supabase: https://vuvchcevhezkxhmlxgrz.supabase.co`);
   console.log(`======================================================\n`);
 
-  // Iniciar cliente nativo WhatsApp Baileys
-  await whatsappManager.init();
-
-  // Iniciar sincronizador do Supabase
+  // Iniciar sincronizador do Supabase de imediato
   supabaseWorker.init();
+
+  // Iniciar cliente nativo WhatsApp Baileys em paralelo
+  whatsappManager.init().catch(err => {
+    console.error('[WhatsApp] Falha ao iniciar:', err?.message || err);
+  });
 });
