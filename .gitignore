@@ -7,6 +7,7 @@ yarn-error.log*
 # Credenciais e Sessões Sensíveis (NUNCA SUBIR)
 .env
 auth_info_baileys/
+config/users.json
 *.session
 
 # Dados de histórico e logs temporários de execução

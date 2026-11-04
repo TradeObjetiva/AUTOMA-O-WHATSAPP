@@ -19,6 +19,7 @@ const UmovmeParser = require('./parser');
 const MessageRouter = require('./router');
 const dispatchQueue = require('./queue');
 const supabaseWorker = require('./supabaseWorker');
+const authManager = require('./auth');
 
 const app = express();
 const settings = Storage.getSettings();
@@ -165,6 +166,107 @@ app.post([
   '/api/webhook/:client/:network',
   '/webhook/:client/:network'
 ], handleUmovmeWebhook);
+
+// -------------------------------------------------------------
+// 1.5. AUTENTICAÇÃO E GESTÃO DE USUÁRIOS (CONTA GOOGLE & SENHA)
+// -------------------------------------------------------------
+app.get('/api/auth/config', (req, res) => {
+  res.json({
+    googleClientId: authManager.getGoogleClientId(),
+    masterAdminEmail: 'inteligencia.trade@objetivamkt.com.br'
+  });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await authManager.loginWithPassword(email, password);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(401).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, name, password } = req.body;
+    const result = await authManager.registerGoogleAccount({ email, name, password });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    const result = await authManager.loginWithGoogleCredential(credential);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(401).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  return authManager.requireAuth(req, res, () => {
+    res.json({
+      success: true,
+      user: {
+        email: req.user.email,
+        name: req.user.name,
+        role: req.user.role,
+        picture: req.user.picture
+      }
+    });
+  });
+});
+
+// Middleware de proteção para todas as rotas administrativas abaixo
+const protectApi = (req, res, next) => authManager.requireAuth(req, res, next);
+app.use(['/api/whatsapp', '/api/mappings', '/api/settings', '/api/queue', '/api/history', '/api/simulate', '/api/users'], protectApi);
+
+// Rotas de Gerenciamento de Usuários (Aba Usuários & Acessos)
+app.get('/api/users', (req, res) => {
+  res.json({
+    users: authManager.getPublicUsersList(),
+    googleClientId: authManager.getGoogleClientId()
+  });
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Apenas administradores podem gerenciar usuários.' });
+    }
+    const { email, name, role, password, status, googleClientId } = req.body;
+    if (typeof googleClientId === 'string') {
+      const currentSettings = Storage.getSettings();
+      Storage.updateSettings({
+        ...currentSettings,
+        auth: { ...(currentSettings.auth || {}), googleClientId: googleClientId.trim() }
+      });
+    }
+    if (email) {
+      const users = await authManager.adminAddOrUpdateUser({ email, name, role, password, status });
+      return res.json({ success: true, users, googleClientId: authManager.getGoogleClientId() });
+    }
+    res.json({ success: true, users: authManager.getPublicUsersList(), googleClientId: authManager.getGoogleClientId() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:email', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Apenas administradores podem remover usuários.' });
+    }
+    const users = await authManager.adminDeleteUser(decodeURIComponent(req.params.email));
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 // -------------------------------------------------------------
 // 2. ENDPOINTS WHATSAPP (Status, Conexão, QR Code, Grupos)
@@ -370,6 +472,11 @@ app.listen(PORT, async () => {
   console.log(`🔗 Webhook por Cliente/Rede: http://localhost:${PORT}/api/webhook/umovme/:cliente/:rede`);
   console.log(`⚡ Supabase: https://vuvchcevhezkxhmlxgrz.supabase.co`);
   console.log(`======================================================\n`);
+
+  // Iniciar gerenciador de usuários e autenticação Google
+  authManager.init().catch(err => {
+    console.error('[Auth] Erro ao inicializar:', err?.message || err);
+  });
 
   // Iniciar sincronizador do Supabase de imediato
   supabaseWorker.init();

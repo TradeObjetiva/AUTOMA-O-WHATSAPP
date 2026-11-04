@@ -9,8 +9,72 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
+
+  <!-- TELA DE LOGIN & CRIAÇÃO DE CONTA GOOGLE -->
+  <div id="auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at top, #131c31 0%, #070b14 100%); display: flex; align-items: center; justify-content: center; padding: 1.2rem;">
+    <div style="width: 100%; max-width: 430px; background: rgba(17, 24, 39, 0.95); border: 1px solid var(--border-color); border-radius: 18px; padding: 2rem; box-shadow: 0 25px 60px rgba(0,0,0,0.65);">
+      <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div style="width: 54px; height: 54px; border-radius: 14px; background: rgba(37, 211, 102, 0.15); border: 1px solid rgba(37, 211, 102, 0.4); display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 0.7rem;">⚡</div>
+        <h2 style="font-size: 1.35rem; font-weight: 700; color: var(--text-main);">Trade Marketing Hub</h2>
+        <p style="font-size: 0.83rem; color: var(--text-muted); margin-top: 0.25rem;">Acesso restrito • Autenticação por Conta Google</p>
+      </div>
+
+      <!-- Abas Login / Criar Conta -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; background: rgba(0,0,0,0.35); padding: 0.35rem; border-radius: 10px; margin-bottom: 1.3rem;">
+        <button type="button" id="btn-auth-mode-login" class="btn btn-primary btn-sm" style="justify-content: center;">🔑 Entrar</button>
+        <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="justify-content: center;">✨ Criar Conta Google</button>
+      </div>
+
+      <!-- Mensagem de erro / sucesso -->
+      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1rem; line-height: 1.4;"></div>
+
+      <!-- Formulário Entrar -->
+      <form id="form-auth-login">
+        <div class="form-group" style="margin-bottom: 0.9rem;">
+          <label>📧 E-mail da Conta Google / Corporativo</label>
+          <input type="email" id="login-email" class="form-input" placeholder="inteligencia.trade@objetivamkt.com.br" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 1.2rem;">
+          <label>🔒 Senha de Acesso</label>
+          <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha" required>
+        </div>
+        <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
+          🚀 Acessar Painel
+        </button>
+      </form>
+
+      <!-- Formulário Criar Conta Google / Primeiro Acesso -->
+      <form id="form-auth-register" style="display: none;">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label>👤 Seu Nome Completo</label>
+          <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano - Trade Marketing" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label>📧 Seu E-mail Google / Corporativo</label>
+          <input type="email" id="register-email" class="form-input" placeholder="seu.email@objetivamkt.com.br" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 1.2rem;">
+          <label>🔑 Definir Senha (mín. 6 caracteres)</label>
+          <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha segura" minlength="6" required>
+        </div>
+        <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
+          ✨ Cadastrar com Conta Google
+        </button>
+        <p style="font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: 0.75rem;">
+          Novas contas passam pela aprovação do administrador (<strong>inteligencia.trade@objetivamkt.com.br</strong>).
+        </p>
+      </form>
+
+      <!-- Botão Oficial Google OAuth (se Google Client ID estiver configurado) -->
+      <div id="google-oauth-container" style="display: none; margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid var(--border-color); text-align: center;">
+        <span style="font-size: 0.76rem; color: var(--text-dim); display: block; margin-bottom: 0.6rem;">Ou acesse em 1 clique com o Google:</span>
+        <div id="google-signin-btn" style="display: flex; justify-content: center;"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Header -->
   <header>
@@ -22,12 +86,19 @@
       </div>
     </div>
     <div class="header-status">
+      <div id="user-logged-badge" style="display: none; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.8rem;">
+        <span>👤</span>
+        <span id="user-logged-email" style="color: var(--text-main); font-weight: 500;"></span>
+      </div>
       <div id="status-badge" class="status-badge disconnected">
         <span class="pulse-dot"></span>
         <span id="status-text">Verificando...</span>
       </div>
       <button id="btn-refresh-all" class="btn btn-secondary btn-sm" title="Atualizar dados">
         🔄 Atualizar
+      </button>
+      <button id="btn-logout-system" class="btn btn-danger btn-sm" title="Sair do sistema">
+        🚪 Sair
       </button>
     </div>
   </header>
@@ -38,6 +109,7 @@
     <button class="tab-btn" data-tab="tab-groups">👥 Grupos do WhatsApp</button>
     <button class="tab-btn" data-tab="tab-mappings">🏢 Clientes & Redes (Webhooks)</button>
     <button class="tab-btn" data-tab="tab-feed">📸 Feed de Atividades</button>
+    <button class="tab-btn" data-tab="tab-users">🔐 Usuários & Acessos</button>
     <button class="tab-btn" data-tab="tab-simulator">🧪 Simulador de Testes</button>
     <button class="tab-btn" data-tab="tab-settings">⚙️ Configurações & 24 Horas</button>
   </nav>
@@ -301,6 +373,79 @@
           <p style="text-align: center; color: var(--text-muted); padding: 2rem;">
             Carregando histórico dos últimos 7 dias...
           </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4.5. TAB: USUÁRIOS & ACESSOS GOOGLE -->
+    <div id="tab-users" class="tab-pane">
+      <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h2 class="card-title">🔐 Controle de Usuários & Contas Google Autorizadas</h2>
+            <p class="card-subtitle">Administrador Principal: <strong>inteligencia.trade@objetivamkt.com.br</strong> • Aprove novos cadastros ou libere e-mails Google da equipe</p>
+          </div>
+        </div>
+
+        <!-- Formulário Liberar / Cadastrar Usuário -->
+        <div style="background: rgba(11, 15, 25, 0.7); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 1.5rem;">
+          <h3 style="font-size: 0.95rem; margin-bottom: 0.85rem; color: var(--accent-wa);">➕ Autorizar ou Atualizar Conta Google da Equipe</h3>
+          <form id="form-manage-user">
+            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+              <div class="form-group">
+                <label>📧 E-mail Google / Corporativo</label>
+                <input type="email" id="user-form-email" class="form-input" placeholder="colaborador@objetivamkt.com.br" required>
+              </div>
+              <div class="form-group">
+                <label>👤 Nome do Usuário</label>
+                <input type="text" id="user-form-name" class="form-input" placeholder="Nome da pessoa">
+              </div>
+              <div class="form-group">
+                <label>🛡️ Nível de Permissão</label>
+                <select id="user-form-role" class="form-input">
+                  <option value="operador">Operador (Equipe)</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>🔑 Senha Inicial / Nova Senha (Opcional)</label>
+                <input type="password" id="user-form-password" class="form-input" placeholder="Deixe vazio para a pessoa criar">
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem;">
+              <button type="submit" class="btn btn-primary btn-sm">💾 Salvar / Autorizar Conta</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tabela de Usuários -->
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Usuário</th>
+                <th>E-mail Google</th>
+                <th>Permissão</th>
+                <th>Status de Acesso</th>
+                <th>Último Login</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando lista de usuários...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Opcional: Google OAuth Client ID -->
+        <div style="margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border-color);">
+          <h4 style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.5rem;">⚙️ Integração Botão "Entrar em 1 Clique com Google" (Opcional - Google OAuth Client ID)</h4>
+          <div style="display: flex; gap: 0.7rem; flex-wrap: wrap;">
+            <input type="text" id="setting-google-client-id" class="form-input" style="flex: 1; min-width: 260px;" placeholder="Ex: 123456789-abc.apps.googleusercontent.com (Opcional)">
+            <button type="button" id="btn-save-google-client" class="btn btn-secondary btn-sm">Salvar Client ID</button>
+          </div>
         </div>
       </div>
     </div>

@@ -5,7 +5,24 @@ let appState = {
   settings: {},
   history: [],
   queue: {},
+  currentUser: null,
+  usersList: [],
   webhookBaseUrl: 'https://vuvchcevhezkxhmlxgrz.supabase.co/functions/v1/umovme-webhook'
+};
+
+// Interceptor global para enviar o Token de Autenticação em todas as chamadas de API
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (url, options = {}) => {
+  const token = localStorage.getItem('trade_hub_token');
+  const headers = { ...(options.headers || {}) };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await originalFetch(url, { ...options, headers });
+  if (res.status === 401 && typeof url === 'string' && !url.includes('/api/auth/')) {
+    showAuthOverlay();
+  }
+  return res;
 };
 
 // Elements
@@ -57,6 +74,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (tabId === 'tab-groups') loadGroups(true);
     if (tabId === 'tab-mappings') loadMappings();
     if (tabId === 'tab-feed') loadHistory();
+    if (tabId === 'tab-users') loadUsers();
     if (tabId === 'tab-settings') loadSettings();
   });
 });
@@ -905,20 +923,380 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// Inicialização e Loop de Polling
-checkWhatsAppStatus();
-loadSettings();
-loadMappings();
-loadHistory();
-checkQueue();
+// -------------------------------------------------------------
+// 7. AUTENTICAÇÃO POR CONTA GOOGLE & GERENCIAMENTO DE USUÁRIOS
+// -------------------------------------------------------------
+const authOverlay = document.getElementById('auth-overlay');
+const authAlertBox = document.getElementById('auth-alert-box');
+const formAuthLogin = document.getElementById('form-auth-login');
+const formAuthRegister = document.getElementById('form-auth-register');
+const btnModeLogin = document.getElementById('btn-auth-mode-login');
+const btnModeRegister = document.getElementById('btn-auth-mode-register');
 
-// Polling a cada 3 segundos para manter status em tempo real
-setInterval(() => {
+function showAuthAlert(msg, type = 'error') {
+  if (!authAlertBox) return;
+  authAlertBox.style.display = 'block';
+  if (type === 'success') {
+    authAlertBox.style.background = 'rgba(34, 197, 94, 0.15)';
+    authAlertBox.style.border = '1px solid rgba(34, 197, 94, 0.45)';
+    authAlertBox.style.color = '#4ade80';
+  } else {
+    authAlertBox.style.background = 'rgba(239, 68, 68, 0.15)';
+    authAlertBox.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+    authAlertBox.style.color = '#f87171';
+  }
+  authAlertBox.textContent = msg;
+}
+
+function hideAuthAlert() {
+  if (authAlertBox) authAlertBox.style.display = 'none';
+}
+
+function showAuthOverlay() {
+  if (authOverlay) authOverlay.style.display = 'flex';
+}
+
+function hideAuthOverlay(user) {
+  if (authOverlay) authOverlay.style.display = 'none';
+  if (user) {
+    appState.currentUser = user;
+    const badge = document.getElementById('user-logged-badge');
+    const emailEl = document.getElementById('user-logged-email');
+    if (badge && emailEl) {
+      emailEl.textContent = user.email;
+      badge.style.display = 'inline-flex';
+    }
+  }
+}
+
+btnModeLogin?.addEventListener('click', () => {
+  hideAuthAlert();
+  btnModeLogin.className = 'btn btn-primary btn-sm';
+  btnModeRegister.className = 'btn btn-secondary btn-sm';
+  formAuthLogin.style.display = 'block';
+  formAuthRegister.style.display = 'none';
+});
+
+btnModeRegister?.addEventListener('click', () => {
+  hideAuthAlert();
+  btnModeRegister.className = 'btn btn-primary btn-sm';
+  btnModeLogin.className = 'btn btn-secondary btn-sm';
+  formAuthRegister.style.display = 'block';
+  formAuthLogin.style.display = 'none';
+});
+
+function startDashboardAll() {
   checkWhatsAppStatus();
-  checkQueue();
-}, 3000);
-
-// Polling de histórico a cada 8 segundos
-setInterval(() => {
+  loadSettings();
+  loadMappings();
   loadHistory();
-}, 8000);
+  checkQueue();
+}
+
+formAuthLogin?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideAuthAlert();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn = document.getElementById('btn-submit-login');
+  btn.disabled = true;
+  btn.textContent = 'Autenticando...';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (res.ok && data.token) {
+      localStorage.setItem('trade_hub_token', data.token);
+      hideAuthOverlay(data.user);
+      showToast(`Bem-vindo(a), ${data.user.name || data.user.email}!`, 'success');
+      startDashboardAll();
+    } else {
+      showAuthAlert(data.error || 'Falha no login.');
+    }
+  } catch (err) {
+    showAuthAlert('Erro de conexão com o servidor.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🚀 Acessar Painel';
+  }
+});
+
+formAuthRegister?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideAuthAlert();
+  const name = document.getElementById('register-name').value.trim();
+  const email = document.getElementById('register-email').value.trim();
+  const password = document.getElementById('register-password').value;
+  const btn = document.getElementById('btn-submit-register');
+  btn.disabled = true;
+  btn.textContent = 'Criando conta...';
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      if (data.approved && data.token) {
+        localStorage.setItem('trade_hub_token', data.token);
+        hideAuthOverlay(data.user);
+        showToast(data.message || 'Conta ativada com sucesso!', 'success');
+        startDashboardAll();
+      } else {
+        showAuthAlert(data.message || 'Cadastro enviado para aprovação do administrador!', 'success');
+        formAuthRegister.reset();
+      }
+    } else {
+      showAuthAlert(data.error || 'Erro ao criar conta.');
+    }
+  } catch (err) {
+    showAuthAlert('Erro ao conectar ao servidor.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Cadastrar com Conta Google';
+  }
+});
+
+document.getElementById('btn-logout-system')?.addEventListener('click', () => {
+  localStorage.removeItem('trade_hub_token');
+  appState.currentUser = null;
+  showAuthOverlay();
+  showToast('Sessão encerrada.', 'info');
+});
+
+async function handleGoogleCredentialResponse(response) {
+  try {
+    hideAuthAlert();
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+    const data = await res.json();
+    if (res.ok && data.token) {
+      localStorage.setItem('trade_hub_token', data.token);
+      hideAuthOverlay(data.user);
+      showToast(`Conectado com Google: ${data.user.email}`, 'success');
+      startDashboardAll();
+    } else {
+      showAuthAlert(data.error || 'Conta Google não autorizada.');
+    }
+  } catch (err) {
+    showAuthAlert('Erro ao autenticar com o Google.');
+  }
+}
+
+function initGoogleOAuthButton(clientId) {
+  if (!clientId) return;
+  const container = document.getElementById('google-oauth-container');
+  const btnEl = document.getElementById('google-signin-btn');
+  if (!container || !btnEl) return;
+
+  const tryRender = () => {
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      container.style.display = 'block';
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse
+      });
+      window.google.accounts.id.renderButton(btnEl, {
+        theme: 'filled_black',
+        size: 'large',
+        width: 320,
+        text: 'continue_with'
+      });
+    } else {
+      setTimeout(tryRender, 600);
+    }
+  };
+  tryRender();
+}
+
+// Gerenciamento de Usuários na aba "Usuários & Acessos"
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/users');
+    if (!res.ok) return;
+    const data = await res.json();
+    appState.usersList = data.users || [];
+    const clientInput = document.getElementById('setting-google-client-id');
+    if (clientInput && typeof data.googleClientId === 'string') {
+      clientInput.value = data.googleClientId;
+    }
+    renderUsersTable(appState.usersList);
+  } catch (_) {}
+}
+
+function renderUsersTable(users) {
+  const tbody = document.getElementById('users-table-body');
+  if (!tbody) return;
+
+  if (!users || users.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = users.map(u => {
+    let statusBadge = '<span class="badge badge-success">✅ Autorizado</span>';
+    if (u.status === 'PENDING') statusBadge = '<span class="badge badge-warning">⏳ Aguardando Aprovação</span>';
+    if (u.status === 'BLOCKED') statusBadge = '<span class="badge badge-danger">🚫 Bloqueado</span>';
+
+    const roleBadge = u.role === 'admin'
+      ? '<span class="badge badge-info">👑 Administrador</span>'
+      : '<span class="badge badge-secondary" style="background: rgba(255,255,255,0.08);">👤 Operador</span>';
+
+    const lastLogin = u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString('pt-BR') : 'Nunca acessou';
+
+    let actionsHtml = '';
+    if (u.isMaster) {
+      actionsHtml = `<span style="font-size: 0.78rem; color: var(--accent-wa);">🔒 Conta Principal</span>`;
+    } else {
+      const approveBtn = u.status !== 'APPROVED'
+        ? `<button class="btn btn-primary btn-sm" onclick="changeUserStatus('${escapeHtml(u.email)}', 'APPROVED')">✅ Aprovar</button>`
+        : `<button class="btn btn-secondary btn-sm" onclick="changeUserStatus('${escapeHtml(u.email)}', 'BLOCKED')">🚫 Bloquear</button>`;
+      const deleteBtn = `<button class="btn btn-danger btn-sm" onclick="removeUserAccount('${escapeHtml(u.email)}')">🗑️ Excluir</button>`;
+      actionsHtml = `<div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">${approveBtn}${deleteBtn}</div>`;
+    }
+
+    return `
+      <tr>
+        <td><strong>${escapeHtml(u.name || '-')}</strong></td>
+        <td><code style="color: #38bdf8;">${escapeHtml(u.email)}</code></td>
+        <td>${roleBadge}</td>
+        <td>${statusBadge}</td>
+        <td style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(lastLogin)}</td>
+        <td>${actionsHtml}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+window.changeUserStatus = async function(email, status) {
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, status })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Status de ${email} atualizado para ${status === 'APPROVED' ? 'Autorizado' : 'Bloqueado'}!`, 'success');
+      renderUsersTable(data.users || []);
+    } else {
+      showToast(data.error || 'Erro ao atualizar usuário.', 'error');
+    }
+  } catch (_) {
+    showToast('Erro ao comunicar com o servidor.', 'error');
+  }
+};
+
+window.removeUserAccount = async function(email) {
+  if (!confirm(`Deseja remover o acesso do e-mail ${email}?`)) return;
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Usuário ${email} removido.`, 'info');
+      renderUsersTable(data.users || []);
+    } else {
+      showToast(data.error || 'Erro ao remover usuário.', 'error');
+    }
+  } catch (_) {
+    showToast('Erro ao remover usuário.', 'error');
+  }
+};
+
+document.getElementById('form-manage-user')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('user-form-email').value.trim();
+  const name = document.getElementById('user-form-name').value.trim();
+  const role = document.getElementById('user-form-role').value;
+  const password = document.getElementById('user-form-password').value;
+
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, role, password, status: 'APPROVED' })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Conta Google (${email}) salva e autorizada com sucesso!`, 'success');
+      document.getElementById('form-manage-user').reset();
+      renderUsersTable(data.users || []);
+    } else {
+      showToast(data.error || 'Erro ao salvar usuário.', 'error');
+    }
+  } catch (_) {
+    showToast('Erro ao salvar usuário.', 'error');
+  }
+});
+
+document.getElementById('btn-save-google-client')?.addEventListener('click', async () => {
+  const googleClientId = document.getElementById('setting-google-client-id')?.value.trim() || '';
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ googleClientId })
+    });
+    if (res.ok) {
+      showToast('Google Client ID salvo com sucesso!', 'success');
+      if (googleClientId) initGoogleOAuthButton(googleClientId);
+    }
+  } catch (_) {
+    showToast('Erro ao salvar Client ID.', 'error');
+  }
+});
+
+// Inicialização da Autenticação e Loop de Polling
+async function bootstrapApp() {
+  try {
+    const cfgRes = await originalFetch('/api/auth/config');
+    const cfg = await cfgRes.json();
+    if (cfg && cfg.googleClientId) {
+      initGoogleOAuthButton(cfg.googleClientId);
+    }
+  } catch (_) {}
+
+  const token = localStorage.getItem('trade_hub_token');
+  if (!token) {
+    showAuthOverlay();
+  } else {
+    try {
+      const meRes = await fetch('/api/auth/me');
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        hideAuthOverlay(meData.user);
+        startDashboardAll();
+      } else {
+        showAuthOverlay();
+      }
+    } catch (_) {
+      showAuthOverlay();
+    }
+  }
+}
+
+bootstrapApp();
+
+// Polling a cada 4 segundos (somente quando autenticado)
+setInterval(() => {
+  if (appState.currentUser) {
+    checkWhatsAppStatus();
+    checkQueue();
+  }
+}, 4000);
+
+// Polling de histórico a cada 10 segundos (somente quando autenticado)
+setInterval(() => {
+  if (appState.currentUser) {
+    loadHistory();
+  }
+}, 10000);
