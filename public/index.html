@@ -14,94 +14,69 @@
 
   <!-- AMBIENTE DE LOGIN E SENHA INTERATIVO (CONECTADO AO SUPABASE) -->
   <div id="auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at top, #152238 0%, #070b14 100%); display: flex; align-items: center; justify-content: center; padding: 1.2rem;">
-    <div style="width: 100%; max-width: 430px; background: rgba(17, 24, 39, 0.96); border: 1px solid var(--border-color); border-radius: 20px; padding: 2rem; box-shadow: 0 28px 65px rgba(0,0,0,0.75);">
+    <div style="width: 100%; max-width: 410px; background: rgba(17, 24, 39, 0.96); border: 1px solid var(--border-color); border-radius: 20px; padding: 2.2rem 2rem; box-shadow: 0 28px 65px rgba(0,0,0,0.75); text-align: center;">
 
-      <!-- Cabeçalho do Login -->
-      <div style="text-align: center; margin-bottom: 1.35rem;">
+      <!-- Cabeçalho do Login Centralizado -->
+      <div style="text-align: center; margin-bottom: 1.6rem;">
         <div style="width: 56px; height: 56px; border-radius: 16px; background: rgba(37, 211, 102, 0.14); border: 1px solid rgba(37, 211, 102, 0.45); display: inline-flex; align-items: center; justify-content: center; font-size: 1.85rem; margin-bottom: 0.65rem; box-shadow: 0 0 25px rgba(37, 211, 102, 0.2);">⚡</div>
-        <h2 style="font-size: 1.4rem; font-weight: 700; color: var(--text-main);">Trade Marketing Hub</h2>
-        <p style="font-size: 0.84rem; color: var(--text-muted); margin-top: 0.25rem;">Objetiva Marketing • Painel de Controle 24h</p>
+        <h2 style="font-size: 1.45rem; font-weight: 700; color: var(--text-main);">Trade Marketing Hub</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Objetiva Marketing • Painel de Controle 24h</p>
 
-        <!-- Badge interativo de conexão com o Supabase -->
-        <div id="auth-supabase-badge" style="display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 0.65rem; padding: 0.3rem 0.75rem; border-radius: 999px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.35); font-size: 0.75rem; color: #4ade80;">
+        <!-- Badge de conexão com o Supabase -->
+        <div id="auth-supabase-badge" style="display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; margin-top: 0.7rem; padding: 0.32rem 0.85rem; border-radius: 999px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.35); font-size: 0.75rem; color: #4ade80;">
           <span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80; display: inline-block;"></span>
           <span id="auth-supabase-status-text">Supabase Conectado</span>
         </div>
       </div>
 
-      <!-- Botões Interativos de Alternância: Entrar / Novo Usuário -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; background: rgba(0,0,0,0.4); padding: 0.38rem; border-radius: 12px; margin-bottom: 1.25rem; border: 1px solid rgba(255,255,255,0.06);">
-        <button type="button" id="btn-auth-mode-login" class="btn btn-primary btn-sm" style="justify-content: center; padding: 0.6rem; border-radius: 9px; transition: all 0.2s;">
-          🔑 Fazer Login
-        </button>
-        <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="justify-content: center; padding: 0.6rem; border-radius: 9px; transition: all 0.2s;">
-          ➕ Novo Usuário
-        </button>
-      </div>
-
       <!-- Alerta de Erro / Sucesso -->
-      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1rem; line-height: 1.4;"></div>
+      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1.1rem; line-height: 1.4; text-align: center;"></div>
 
-      <!-- FORMULÁRIO 1: LOGIN E SENHA -->
-      <form id="form-auth-login">
-        <!-- Botões rápidos interativos para preencher o usuário em 1 clique -->
-        <div style="margin-bottom: 0.95rem;">
-          <span style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem;">Acesso rápido (clique para preencher o usuário):</span>
-          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="quickFillLogin('admin')" style="font-size: 0.76rem; padding: 0.35rem 0.65rem; border-radius: 8px;">
-              👤 admin (Fabiano)
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="quickFillLogin('inteligencia.trade@objetivamkt.com.br')" style="font-size: 0.76rem; padding: 0.35rem 0.65rem; border-radius: 8px;">
-              📧 inteligencia.trade
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="quickFillLogin('objetiva')" style="font-size: 0.76rem; padding: 0.35rem 0.65rem; border-radius: 8px;">
-              🏢 objetiva
-            </button>
-          </div>
+      <!-- FORMULÁRIO 1: LOGIN E SENHA CENTRALIZADO -->
+      <form id="form-auth-login" style="text-align: center;">
+        <div class="form-group" style="margin-bottom: 1.05rem; text-align: center;">
+          <label style="display: block; text-align: center; margin-bottom: 0.45rem;">👤 Usuário ou E-mail</label>
+          <input type="text" id="login-email" class="form-input" placeholder="Digite seu usuário ou e-mail" autocomplete="username" style="width: 100%; text-align: center;" required>
         </div>
 
-        <div class="form-group" style="margin-bottom: 0.95rem;">
-          <label>👤 Usuário ou E-mail</label>
-          <input type="text" id="login-email" class="form-input" placeholder="Digite admin ou seu e-mail" autocomplete="username" required>
+        <div class="form-group" style="margin-bottom: 1.35rem; text-align: center;">
+          <label style="display: block; text-align: center; margin-bottom: 0.45rem;">🔒 Senha de Acesso</label>
+          <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha" autocomplete="current-password" style="width: 100%; text-align: center;" required>
         </div>
 
-        <div class="form-group" style="margin-bottom: 1.25rem;">
-          <label>🔒 Senha de Acesso</label>
-          <div style="position: relative; display: flex; align-items: center;">
-            <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha" autocomplete="current-password" style="padding-right: 2.8rem;" required>
-            <button type="button" id="btn-toggle-login-pass" title="Mostrar/Ocultar Senha" style="position: absolute; right: 0.6rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: var(--text-main); border-radius: 7px; padding: 0.28rem 0.5rem; font-size: 0.85rem; cursor: pointer;">
-              👁️
-            </button>
-          </div>
-        </div>
-
-        <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.82rem; font-size: 0.95rem; border-radius: 11px; box-shadow: 0 8px 20px rgba(37, 211, 102, 0.25);">
+        <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.96rem; border-radius: 11px; box-shadow: 0 8px 20px rgba(37, 211, 102, 0.25);">
           🚀 Entrar no Sistema
         </button>
+
+        <div style="margin-top: 1rem;">
+          <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; padding: 0.65rem; border-radius: 10px;">
+            ➕ Novo Usuário
+          </button>
+        </div>
       </form>
 
-      <!-- FORMULÁRIO 2: CRIAR NOVO USUÁRIO -->
-      <form id="form-auth-register" style="display: none;">
-        <div class="form-group" style="margin-bottom: 0.85rem;">
-          <label>👤 Nome Completo</label>
-          <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano Pereira" required>
+      <!-- FORMULÁRIO 2: CRIAR NOVO USUÁRIO CENTRALIZADO -->
+      <form id="form-auth-register" style="display: none; text-align: center;">
+        <div class="form-group" style="margin-bottom: 0.9rem; text-align: center;">
+          <label style="display: block; text-align: center; margin-bottom: 0.4rem;">👤 Nome Completo</label>
+          <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano Pereira" style="width: 100%; text-align: center;" required>
         </div>
-        <div class="form-group" style="margin-bottom: 0.85rem;">
-          <label>🆔 Usuário de Login (ou E-mail)</label>
-          <input type="text" id="register-email" class="form-input" placeholder="Ex: fabiano ou email@objetivamkt.com.br" required>
+        <div class="form-group" style="margin-bottom: 0.9rem; text-align: center;">
+          <label style="display: block; text-align: center; margin-bottom: 0.4rem;">🆔 Usuário de Login ou E-mail</label>
+          <input type="text" id="register-email" class="form-input" placeholder="Ex: fabiano ou email@objetivamkt.com.br" style="width: 100%; text-align: center;" required>
         </div>
-        <div class="form-group" style="margin-bottom: 1.2rem;">
-          <label>🔑 Definir Senha</label>
-          <div style="position: relative; display: flex; align-items: center;">
-            <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha (mín. 4 caracteres)" minlength="4" style="padding-right: 2.8rem;" required>
-            <button type="button" id="btn-toggle-register-pass" title="Mostrar/Ocultar Senha" style="position: absolute; right: 0.6rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: var(--text-main); border-radius: 7px; padding: 0.28rem 0.5rem; font-size: 0.85rem; cursor: pointer;">
-              👁️
-            </button>
-          </div>
+        <div class="form-group" style="margin-bottom: 1.25rem; text-align: center;">
+          <label style="display: block; text-align: center; margin-bottom: 0.4rem;">🔑 Definir Senha</label>
+          <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha (mín. 4 caracteres)" minlength="4" style="width: 100%; text-align: center;" required>
         </div>
-        <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.82rem; font-size: 0.95rem; border-radius: 11px;">
+        <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.95rem; border-radius: 11px;">
           ✨ Criar Usuário e Entrar
         </button>
+        <div style="margin-top: 0.9rem;">
+          <button type="button" id="btn-auth-mode-login" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; padding: 0.65rem; border-radius: 10px;">
+            ‹ Voltar para o Login
+          </button>
+        </div>
       </form>
 
     </div>

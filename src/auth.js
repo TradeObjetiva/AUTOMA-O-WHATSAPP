@@ -408,7 +408,7 @@ class AuthManager {
     }
 
     if (!passwordValid) {
-      throw new Error('Senha incorreta. Clique no ícone 👁️ no campo de senha para conferir o que digitou.');
+      throw new Error('Senha incorreta. Verifique sua senha e tente novamente.');
     }
 
     user.lastLoginAt = new Date().toISOString();

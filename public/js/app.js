@@ -1009,16 +1009,12 @@ function hideAuthOverlay(user) {
 
 btnModeLogin?.addEventListener('click', () => {
   hideAuthAlert();
-  btnModeLogin.className = 'btn btn-primary btn-sm';
-  btnModeRegister.className = 'btn btn-secondary btn-sm';
   formAuthLogin.style.display = 'block';
   formAuthRegister.style.display = 'none';
 });
 
 btnModeRegister?.addEventListener('click', () => {
   hideAuthAlert();
-  btnModeRegister.className = 'btn btn-primary btn-sm';
-  btnModeLogin.className = 'btn btn-secondary btn-sm';
   formAuthRegister.style.display = 'block';
   formAuthLogin.style.display = 'none';
 });
