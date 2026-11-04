@@ -13,66 +13,148 @@
 </head>
 <body>
 
-  <!-- TELA DE LOGIN & CRIAÇÃO DE CONTA GOOGLE -->
-  <div id="auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at top, #131c31 0%, #070b14 100%); display: flex; align-items: center; justify-content: center; padding: 1.2rem;">
-    <div style="width: 100%; max-width: 430px; background: rgba(17, 24, 39, 0.95); border: 1px solid var(--border-color); border-radius: 18px; padding: 2rem; box-shadow: 0 25px 60px rgba(0,0,0,0.65);">
-      <div style="text-align: center; margin-bottom: 1.5rem;">
-        <div style="width: 54px; height: 54px; border-radius: 14px; background: rgba(37, 211, 102, 0.15); border: 1px solid rgba(37, 211, 102, 0.4); display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 0.7rem;">⚡</div>
-        <h2 style="font-size: 1.35rem; font-weight: 700; color: var(--text-main);">Trade Marketing Hub</h2>
-        <p style="font-size: 0.83rem; color: var(--text-muted); margin-top: 0.25rem;">Acesso restrito • Autenticação por Conta Google</p>
-      </div>
+  <!-- TELA DE LOGIN & ESCOLHA DE CONTA GOOGLE (ESTILO CANVA / GOOGLE ACCOUNT CHOOSER) -->
+  <div id="auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at top, #182238 0%, #090d16 100%); display: flex; align-items: center; justify-content: center; padding: 1.2rem;">
+    <div style="width: 100%; max-width: 420px; background: #18191b; border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 2.1rem 1.9rem; box-shadow: 0 28px 70px rgba(0,0,0,0.75); color: #f3f4f6;">
 
-      <!-- Abas Login / Criar Conta -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; background: rgba(0,0,0,0.35); padding: 0.35rem; border-radius: 10px; margin-bottom: 1.3rem;">
-        <button type="button" id="btn-auth-mode-login" class="btn btn-primary btn-sm" style="justify-content: center;">🔑 Entrar</button>
-        <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="justify-content: center;">✨ Criar Conta Google</button>
-      </div>
+      <!-- Mensagem de erro / sucesso global do modal -->
+      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1.1rem; line-height: 1.4;"></div>
 
-      <!-- Mensagem de erro / sucesso -->
-      <div id="auth-alert-box" style="display: none; padding: 0.75rem 0.9rem; border-radius: 10px; font-size: 0.83rem; margin-bottom: 1rem; line-height: 1.4;"></div>
+      <!-- ETAPA 1: TELA INICIAL ("Faça login ou registre-se em segundos" - Igual Imagem 1) -->
+      <div id="auth-step-welcome">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem;">
+          <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(37, 211, 102, 0.15); border: 1px solid rgba(37, 211, 102, 0.4); display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem;">⚡</div>
+          <span style="font-size: 0.9rem; font-weight: 700; color: #25d366; letter-spacing: 0.02em;">Trade Marketing Hub</span>
+        </div>
 
-      <!-- Formulário Entrar -->
-      <form id="form-auth-login">
-        <div class="form-group" style="margin-bottom: 0.9rem;">
-          <label>📧 E-mail da Conta Google / Corporativo</label>
-          <input type="email" id="login-email" class="form-input" placeholder="inteligencia.trade@objetivamkt.com.br" required>
-        </div>
-        <div class="form-group" style="margin-bottom: 1.2rem;">
-          <label>🔒 Senha de Acesso</label>
-          <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha" required>
-        </div>
-        <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
-          🚀 Acessar Painel
-        </button>
-      </form>
-
-      <!-- Formulário Criar Conta Google / Primeiro Acesso -->
-      <form id="form-auth-register" style="display: none;">
-        <div class="form-group" style="margin-bottom: 0.85rem;">
-          <label>👤 Seu Nome Completo</label>
-          <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano - Trade Marketing" required>
-        </div>
-        <div class="form-group" style="margin-bottom: 0.85rem;">
-          <label>📧 Seu E-mail Google / Corporativo</label>
-          <input type="email" id="register-email" class="form-input" placeholder="seu.email@objetivamkt.com.br" required>
-        </div>
-        <div class="form-group" style="margin-bottom: 1.2rem;">
-          <label>🔑 Definir Senha (mín. 6 caracteres)</label>
-          <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha segura" minlength="6" required>
-        </div>
-        <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
-          ✨ Cadastrar com Conta Google
-        </button>
-        <p style="font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: 0.75rem;">
-          Novas contas passam pela aprovação do administrador (<strong>inteligencia.trade@objetivamkt.com.br</strong>).
+        <h2 style="font-size: 1.6rem; font-weight: 700; color: #ffffff; line-height: 1.25; margin-bottom: 0.65rem;">
+          Faça login ou registre-se em segundos
+        </h2>
+        <p style="font-size: 0.9rem; color: #9ca3af; line-height: 1.45; margin-bottom: 1.6rem;">
+          Use sua Conta Google ou seu e-mail corporativo para entrar no painel da Objetiva Marketing.
         </p>
-      </form>
 
-      <!-- Botão Oficial Google OAuth (se Google Client ID estiver configurado) -->
-      <div id="google-oauth-container" style="display: none; margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid var(--border-color); text-align: center;">
-        <span style="font-size: 0.76rem; color: var(--text-dim); display: block; margin-bottom: 0.6rem;">Ou acesse em 1 clique com o Google:</span>
-        <div id="google-signin-btn" style="display: flex; justify-content: center;"></div>
+        <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+          <!-- Botão Continuar com o Google -->
+          <button type="button" id="btn-continue-google" style="width: 100%; display: flex; align-items: center; justify-content: center; position: relative; padding: 0.88rem 1.1rem; background: #202124; hover: #2a2b2f; color: #ffffff; border: 1px solid rgba(255,255,255,0.22); border-radius: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.18s ease;">
+            <svg style="position: absolute; left: 1.1rem; width: 20px; height: 20px;" viewBox="0 0 24 24">
+              <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"/>
+              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"/>
+              <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"/>
+              <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"/>
+            </svg>
+            <span>Continuar com o Google</span>
+          </button>
+
+          <!-- Botão Continuar com e-mail -->
+          <button type="button" id="btn-continue-email" style="width: 100%; display: flex; align-items: center; justify-content: center; position: relative; padding: 0.88rem 1.1rem; background: #202124; color: #ffffff; border: 1px solid rgba(255,255,255,0.22); border-radius: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.18s ease;">
+            <svg style="position: absolute; left: 1.1rem; width: 20px; height: 20px; stroke: #e5e7eb;" fill="none" viewBox="0 0 24 24" stroke-width="1.8">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M3 7l9 6 9-6" />
+            </svg>
+            <span>Continuar com e-mail</span>
+          </button>
+        </div>
+
+        <!-- Container oculto caso queira renderizar botão GSI nativo extra -->
+        <div id="google-oauth-container" style="display: none; margin-top: 1rem; text-align: center;">
+          <div id="google-signin-btn" style="display: flex; justify-content: center;"></div>
+        </div>
       </div>
+
+      <!-- ETAPA 2: JANELA "FAZER LOGIN COM O GOOGLE - ESCOLHA UMA CONTA" (Igual Imagem 2) -->
+      <div id="auth-step-google-chooser" style="display: none;">
+        <!-- Topo estilo barra Fazer Login com o Google -->
+        <div style="display: flex; align-items: center; gap: 0.65rem; padding-bottom: 0.9rem; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.12);">
+          <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
+            <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"/>
+            <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"/>
+            <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"/>
+            <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"/>
+          </svg>
+          <span style="font-size: 0.88rem; color: #e5e7eb; font-weight: 500;">Fazer Login com o Google</span>
+        </div>
+
+        <h3 style="font-size: 1.55rem; font-weight: 500; color: #ffffff; margin-bottom: 0.35rem;">Escolha uma conta</h3>
+        <p style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 1.35rem;">
+          Prosseguir para <span style="color: #60a5fa; font-weight: 600;">Trade Marketing Hub</span>
+        </p>
+
+        <!-- Lista dinâmica de Contas Google (Fabiano Pereira, Objetiva Marketing, etc.) -->
+        <div id="google-chooser-accounts-list" style="display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.1);"></div>
+
+        <!-- Usar outra conta -->
+        <button type="button" id="btn-google-use-another" style="width: 100%; display: flex; align-items: center; gap: 0.9rem; padding: 0.95rem 0.6rem; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.12); color: #e5e7eb; font-size: 0.9rem; font-weight: 500; cursor: pointer; text-align: left;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; font-size: 1rem;">👤</div>
+          <span>Usar outra conta</span>
+        </button>
+
+        <div style="margin-top: 1.3rem; display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" id="btn-back-from-chooser" style="background: transparent; border: none; color: #9ca3af; font-size: 0.83rem; cursor: pointer;">‹ Voltar</button>
+          <span style="font-size: 0.75rem; color: #6b7280;">Português (Brasil)</span>
+        </div>
+      </div>
+
+      <!-- ETAPA 3: FORMULÁRIO DE LOGIN / SENHA DA CONTA ESCOLHIDA -->
+      <div id="auth-step-email-form" style="display: none;">
+        <button type="button" id="btn-back-to-welcome" style="background: transparent; border: none; color: #9ca3af; font-size: 0.88rem; cursor: pointer; margin-bottom: 0.9rem; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0;">
+          ‹ Voltar
+        </button>
+
+        <!-- Chip da conta selecionada (aparece quando clicou na conta na lista do Google) -->
+        <div id="selected-google-account-pill" style="display: none; align-items: center; gap: 0.7rem; padding: 0.55rem 0.85rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; margin-bottom: 1.15rem;">
+          <div id="selected-account-avatar" style="width: 28px; height: 28px; border-radius: 50%; background: #7e22ce; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.82rem;">F</div>
+          <div style="flex: 1; overflow: hidden;">
+            <div id="selected-account-name" style="font-size: 0.82rem; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+            <div id="selected-account-email" style="font-size: 0.74rem; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+          </div>
+          <button type="button" id="btn-change-account" style="background: transparent; border: none; color: #60a5fa; font-size: 0.75rem; cursor: pointer;">Trocar</button>
+        </div>
+
+        <!-- Abas Entrar / Criar Conta -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; background: rgba(0,0,0,0.4); padding: 0.35rem; border-radius: 10px; margin-bottom: 1.2rem;">
+          <button type="button" id="btn-auth-mode-login" class="btn btn-primary btn-sm" style="justify-content: center;">🔑 Entrar</button>
+          <button type="button" id="btn-auth-mode-register" class="btn btn-secondary btn-sm" style="justify-content: center;">✨ Criar Conta</button>
+        </div>
+
+        <!-- Formulário Entrar -->
+        <form id="form-auth-login">
+          <div class="form-group" id="login-email-group" style="margin-bottom: 0.9rem;">
+            <label>📧 E-mail da Conta Google</label>
+            <input type="email" id="login-email" class="form-input" placeholder="inteligencia.trade@objetivamkt.com.br" required>
+          </div>
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label>🔒 Digite sua senha</label>
+            <input type="password" id="login-password" class="form-input" placeholder="Digite sua senha de acesso" required>
+          </div>
+          <button type="submit" id="btn-submit-login" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.8rem;">
+            🚀 Prosseguir para o Painel
+          </button>
+        </form>
+
+        <!-- Formulário Criar Conta Google / Primeiro Acesso -->
+        <form id="form-auth-register" style="display: none;">
+          <div class="form-group" style="margin-bottom: 0.85rem;">
+            <label>👤 Seu Nome Completo</label>
+            <input type="text" id="register-name" class="form-input" placeholder="Ex: Fabiano Pereira" required>
+          </div>
+          <div class="form-group" style="margin-bottom: 0.85rem;">
+            <label>📧 Seu E-mail Google</label>
+            <input type="email" id="register-email" class="form-input" placeholder="seu.email@objetivamkt.com.br" required>
+          </div>
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label>🔑 Definir Senha (mín. 6 caracteres)</label>
+            <input type="password" id="register-password" class="form-input" placeholder="Crie uma senha segura" minlength="6" required>
+          </div>
+          <button type="submit" id="btn-submit-register" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.8rem;">
+            ✨ Cadastrar Conta Google
+          </button>
+          <p style="font-size: 0.75rem; color: #9ca3af; text-align: center; margin-top: 0.75rem;">
+            Novas contas passam pela aprovação do administrador.
+          </p>
+        </form>
+      </div>
+
     </div>
   </div>
 

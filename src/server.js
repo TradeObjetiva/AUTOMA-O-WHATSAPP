@@ -173,7 +173,8 @@ app.post([
 app.get('/api/auth/config', (req, res) => {
   res.json({
     googleClientId: authManager.getGoogleClientId(),
-    masterAdminEmail: 'inteligencia.trade@objetivamkt.com.br'
+    masterAdminEmail: 'inteligencia.trade@objetivamkt.com.br',
+    accounts: authManager.getPublicAccountsChooserList()
   });
 });
 
@@ -199,8 +200,8 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/google', async (req, res) => {
   try {
-    const { credential } = req.body;
-    const result = await authManager.loginWithGoogleCredential(credential);
+    const { credential, accessToken } = req.body;
+    const result = await authManager.loginWithGoogleCredential(credential, accessToken);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(401).json({ success: false, error: err.message });
@@ -240,11 +241,7 @@ app.post('/api/users', async (req, res) => {
     }
     const { email, name, role, password, status, googleClientId } = req.body;
     if (typeof googleClientId === 'string') {
-      const currentSettings = Storage.getSettings();
-      Storage.updateSettings({
-        ...currentSettings,
-        auth: { ...(currentSettings.auth || {}), googleClientId: googleClientId.trim() }
-      });
+      await authManager.setGoogleClientId(googleClientId);
     }
     if (email) {
       const users = await authManager.adminAddOrUpdateUser({ email, name, role, password, status });

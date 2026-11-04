@@ -8,6 +8,7 @@ const Storage = require('./storage');
 const USERS_FILE = path.join(__dirname, '../config/users.json');
 const USERS_BACKUP_ID = '__system_users_auth__';
 const MASTER_ADMIN_EMAIL = 'inteligencia.trade@objetivamkt.com.br';
+const SECONDARY_ADMIN_EMAIL = 'objetiva.mkt@gmail.com';
 const DEFAULT_MASTER_PASS = process.env.ADMIN_PASSWORD || 'Objetiva@2026';
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'trade-mkt-objetiva-secret-key-2026-render';
 
@@ -58,6 +59,7 @@ function verifyToken(token) {
 class AuthManager {
   constructor() {
     this.users = [];
+    this.googleClientId = '';
     this.supabase = null;
     this.initialized = false;
   }
@@ -80,28 +82,50 @@ class AuthManager {
   }
 
   ensureMasterAdmin() {
-    const lowerMaster = MASTER_ADMIN_EMAIL.toLowerCase();
-    let master = this.users.find(u => u.email.toLowerCase() === lowerMaster);
-    if (!master) {
-      master = {
-        email: lowerMaster,
-        name: 'Inteligência Trade (Admin)',
-        role: 'admin',
-        status: 'APPROVED',
-        passwordHash: hashPassword(DEFAULT_MASTER_PASS),
-        picture: null,
-        createdAt: new Date().toISOString()
-      };
-      this.users.unshift(master);
-      return true;
-    } else {
-      master.role = 'admin';
-      master.status = 'APPROVED';
-      if (!master.passwordHash) {
-        master.passwordHash = hashPassword(DEFAULT_MASTER_PASS);
+    const defaultAdmins = [
+      {
+        email: MASTER_ADMIN_EMAIL.toLowerCase(),
+        name: 'Fabiano Pereira',
+        avatarColor: '#7e22ce'
+      },
+      {
+        email: SECONDARY_ADMIN_EMAIL.toLowerCase(),
+        name: 'Objetiva Marketing',
+        avatarColor: '#ea580c'
       }
-      return false;
+    ];
+
+    let changed = false;
+    for (const def of defaultAdmins.reverse()) {
+      let existing = this.users.find(u => u.email.toLowerCase() === def.email);
+      if (!existing) {
+        existing = {
+          email: def.email,
+          name: def.name,
+          role: 'admin',
+          status: 'APPROVED',
+          passwordHash: hashPassword(DEFAULT_MASTER_PASS),
+          picture: null,
+          avatarColor: def.avatarColor,
+          createdAt: new Date().toISOString()
+        };
+        this.users.unshift(existing);
+        changed = true;
+      } else {
+        existing.role = 'admin';
+        existing.status = 'APPROVED';
+        if (existing.name === 'Inteligência Trade (Admin)') {
+          existing.name = def.name;
+        }
+        if (!existing.avatarColor) {
+          existing.avatarColor = def.avatarColor;
+        }
+        if (!existing.passwordHash) {
+          existing.passwordHash = hashPassword(DEFAULT_MASTER_PASS);
+        }
+      }
     }
+    return changed;
   }
 
   loadLocalUsers() {
@@ -110,6 +134,9 @@ class AuthManager {
         const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
         if (Array.isArray(data.users)) {
           this.users = data.users;
+        }
+        if (data.googleClientId) {
+          this.googleClientId = data.googleClientId;
         }
       }
     } catch (_) {}
@@ -120,7 +147,10 @@ class AuthManager {
     try {
       const dir = path.dirname(USERS_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(USERS_FILE, JSON.stringify({ users: this.users }, null, 2), 'utf-8');
+      fs.writeFileSync(USERS_FILE, JSON.stringify({
+        users: this.users,
+        googleClientId: this.googleClientId || ''
+      }, null, 2), 'utf-8');
     } catch (_) {}
   }
 
@@ -139,6 +169,9 @@ class AuthManager {
           const parsed = JSON.parse(data.route_slug);
           if (Array.isArray(parsed.users) && parsed.users.length > 0) {
             this.users = parsed.users;
+          }
+          if (parsed.googleClientId) {
+            this.googleClientId = parsed.googleClientId;
           }
         }
       }
@@ -164,7 +197,10 @@ class AuthManager {
           nome: 'Sistema - Usuários Autorizados (Não Excluir)',
           cliente: '__SYSTEM__',
           rede: '',
-          route_slug: JSON.stringify({ users: this.users }),
+          route_slug: JSON.stringify({
+            users: this.users,
+            googleClientId: this.getGoogleClientId()
+          }),
           grupo_whatsapp_id: 'system',
           grupo_whatsapp_nome: 'Controle de Usuários Google',
           ativo: false
@@ -172,6 +208,17 @@ class AuthManager {
     } catch (err) {
       console.warn('[Auth] Aviso ao salvar usuários no Supabase:', err.message);
     }
+  }
+
+  getPublicAccountsChooserList() {
+    return this.users
+      .filter(u => u.status === 'APPROVED')
+      .map(u => ({
+        email: u.email,
+        name: u.name || u.email.split('@')[0],
+        picture: u.picture || null,
+        avatarColor: u.avatarColor || '#2563eb'
+      }));
   }
 
   getPublicUsersList() {
@@ -299,15 +346,25 @@ class AuthManager {
   }
 
   /**
-   * Login 1-Clique com Token OAuth Oficial do Google
+   * Login 1-Clique com Token OAuth Oficial do Google (id_token ou access_token do popup)
    */
-  async loginWithGoogleCredential(credential) {
-    if (!credential) throw new Error('Token do Google ausente.');
+  async loginWithGoogleCredential(credential, accessToken = null) {
+    let payload = null;
 
-    const res = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
-    const payload = res.data;
+    if (accessToken) {
+      const res = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      payload = res.data;
+    } else if (credential) {
+      const res = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+      payload = res.data;
+    } else {
+      throw new Error('Token do Google ausente.');
+    }
 
-    if (!payload || !payload.email || payload.email_verified !== 'true') {
+    const isVerified = payload && (payload.email_verified === true || payload.email_verified === 'true');
+    if (!payload || !payload.email || !isVerified) {
       throw new Error('Não foi possível validar o e-mail da conta Google.');
     }
 
@@ -318,7 +375,7 @@ class AuthManager {
     let user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
 
     if (!user) {
-      const isMaster = cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase();
+      const isMaster = cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase() || cleanEmail === SECONDARY_ADMIN_EMAIL.toLowerCase();
       user = {
         email: cleanEmail,
         name,
@@ -415,9 +472,21 @@ class AuthManager {
     return this.getPublicUsersList();
   }
 
+  async setGoogleClientId(clientId) {
+    this.googleClientId = (clientId || '').trim();
+    const currentSettings = Storage.getSettings();
+    Storage.updateSettings({
+      ...currentSettings,
+      auth: { ...(currentSettings.auth || {}), googleClientId: this.googleClientId }
+    });
+    this.saveLocalUsers();
+    await this.syncToSupabase();
+    return this.getGoogleClientId();
+  }
+
   getGoogleClientId() {
     const settings = Storage.getSettings();
-    return (process.env.GOOGLE_CLIENT_ID || settings.auth?.googleClientId || '').trim();
+    return (process.env.GOOGLE_CLIENT_ID || this.googleClientId || settings.auth?.googleClientId || '').trim();
   }
 
   /**
@@ -446,3 +515,4 @@ class AuthManager {
 
 const instance = new AuthManager();
 module.exports = instance;
+
